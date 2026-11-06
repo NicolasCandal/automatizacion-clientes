@@ -1,231 +1,231 @@
-"""Pruebas aisladas de configuración sin credenciales ni acceso a servicios."""
+"""Isolated settings tests without credentials or service access."""
 
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from automatizacion_clientes.config import Config, cargar_config
-from automatizacion_clientes.core.modelos import PoliticaCoincidencia
+from client_automation.config import Config, load_config
+from client_automation.core.models import MatchingPolicy
 
 
 @pytest.fixture(autouse=True)
-def aislar_entorno(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Evita que el entorno y el archivo .env locales afecten los tests."""
+def isolate_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Regression tests for config."""
     from os import environ
 
-    for nombre in tuple(environ):
-        if nombre.upper().startswith("AC_"):
-            monkeypatch.delenv(nombre)
+    for name in tuple(environ):
+        if name.upper().startswith("CA_"):
+            monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)
 
 
-def test_valores_por_defecto_son_seguros(tmp_path: Path) -> None:
-    configuracion = cargar_config(ruta_env=None)
+def test_values_by_default_are_safe(tmp_path: Path) -> None:
+    configuration = load_config(path_env=None)
 
-    assert configuracion.repositorio == "excel"
-    assert configuracion.simulacion is True
-    assert configuracion.spreadsheet_id is None
-    assert configuracion.excel_path == tmp_path / "datos/entrada/clientes.xlsx"
-    assert configuracion.resolucion_path == tmp_path / "datos/salida/resolucion.json"
-    assert configuracion.credentials_path == tmp_path / "secretos/credentials.json"
-    assert configuracion.zona_horaria == "America/Argentina/Buenos_Aires"
-    assert not (tmp_path / "datos").exists()
-    assert not (tmp_path / "secretos").exists()
+    assert configuration.repository == "excel"
+    assert configuration.dry_run is True
+    assert configuration.spreadsheet_id is None
+    assert configuration.excel_path == tmp_path / "data/input/clients.xlsx"
+    assert configuration.resolution_path == tmp_path / "data/output/resolution.json"
+    assert configuration.credentials_path == tmp_path / "secrets/credentials.json"
+    assert configuration.time_zone == "America/Argentina/Buenos_Aires"
+    assert not (tmp_path / "data").exists()
+    assert not (tmp_path / "secrets").exists()
     assert not (tmp_path / "logs").exists()
 
 
-def test_entorno_prevalece_sobre_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    archivo_env = tmp_path / ".env"
-    archivo_env.write_text("AC_LOG_LEVEL=WARNING\nAC_SIMULACION=false\n", encoding="utf-8")
-    monkeypatch.setenv("AC_LOG_LEVEL", "ERROR")
+def test_environment_overrides_over_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("CA_LOG_LEVEL=WARNING\nCA_DRY_RUN=false\n", encoding="utf-8")
+    monkeypatch.setenv("CA_LOG_LEVEL", "ERROR")
 
-    configuracion = cargar_config()
+    configuration = load_config()
 
-    assert configuracion.log_level == "ERROR"
-    assert configuracion.simulacion is False
+    assert configuration.log_level == "ERROR"
+    assert configuration.dry_run is False
 
 
-def test_argumento_explicito_prevalece_sobre_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AC_LOG_LEVEL", "ERROR")
+def test_argument_explicit_overrides_over_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CA_LOG_LEVEL", "ERROR")
 
     assert Config(log_level="DEBUG", _env_file=None).log_level == "DEBUG"
 
 
-def test_se_puede_desactivar_dotenv(tmp_path: Path) -> None:
-    (tmp_path / ".env").write_text("AC_REPOSITORIO=invalido\n", encoding="utf-8")
+def test_can_disable_dotenv(tmp_path: Path) -> None:
+    (tmp_path / ".env").write_text("CA_REPOSITORY=invalid\n", encoding="utf-8")
 
-    assert cargar_config(ruta_env=None).repositorio == "excel"
+    assert load_config(path_env=None).repository == "excel"
 
 
-def test_dotenv_puede_compartirse_con_la_aplicacion_anterior(tmp_path: Path) -> None:
+def test_dotenv_can_share_with_the_application_previous(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text(
-        "SPREADSHEET_ID=identificador_anterior\nAC_LOG_LEVEL=WARNING\n", encoding="utf-8"
+        "SPREADSHEET_ID=identifier_previous\nCA_LOG_LEVEL=WARNING\n", encoding="utf-8"
     )
 
-    configuracion = cargar_config()
+    configuration = load_config()
 
-    assert configuracion.spreadsheet_id is None
-    assert configuracion.log_level == "WARNING"
+    assert configuration.spreadsheet_id is None
+    assert configuration.log_level == "WARNING"
 
 
-def test_base_explicita_resuelve_archivo_env_y_rutas(tmp_path: Path) -> None:
-    base_configurada = tmp_path / "otra_base"
-    base_configurada.mkdir()
-    (base_configurada / "opciones.env").write_text(
-        "AC_EXCEL_PATH=entrada/clientes.xlsx\n", encoding="utf-8"
+def test_base_explicit_resolves_file_env_and_paths(tmp_path: Path) -> None:
+    base_configured = tmp_path / "other_base"
+    base_configured.mkdir()
+    (base_configured / "options.env").write_text(
+        "CA_EXCEL_PATH=input/clients.xlsx\n", encoding="utf-8"
     )
 
-    configuracion = cargar_config(Path("opciones.env"), directorio_base=base_configurada)
+    configuration = load_config(Path("options.env"), base_directory=base_configured)
 
-    assert configuracion.excel_path == base_configurada / "entrada/clientes.xlsx"
-    assert configuracion.directorio_base == base_configurada
-
-
-def test_base_del_entorno_resuelve_rutas(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    base_configurada = tmp_path / "base_desde_entorno"
-    monkeypatch.setenv("AC_DIRECTORIO_BASE", str(base_configurada))
-
-    assert cargar_config(ruta_env=None).excel_path == (
-        base_configurada / "datos/entrada/clientes.xlsx"
-    )
+    assert configuration.excel_path == base_configured / "input/clients.xlsx"
+    assert configuration.base_directory == base_configured
 
 
-def test_base_explicita_prevalece_sobre_entorno(
+def test_base_of_environment_resolves_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("AC_DIRECTORIO_BASE", str(tmp_path / "base_del_entorno"))
+    base_configured = tmp_path / "base_start_date_environment"
+    monkeypatch.setenv("CA_BASE_DIRECTORY", str(base_configured))
 
-    configuracion = cargar_config(ruta_env=None, directorio_base=tmp_path / "base_explicita")
-
-    assert configuracion.directorio_base == tmp_path / "base_explicita"
-
-
-def test_ruta_absoluta_no_se_reinterpreta(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    ruta_absoluta = tmp_path / "ubicacion_independiente/clientes.xlsx"
-    monkeypatch.setenv("AC_EXCEL_PATH", str(ruta_absoluta))
-
-    configuracion = cargar_config(ruta_env=None, directorio_base=tmp_path / "otra_base")
-
-    assert configuracion.excel_path == ruta_absoluta
+    assert load_config(path_env=None).excel_path == (base_configured / "data/input/clients.xlsx")
 
 
-@pytest.mark.parametrize("identificador", ["", "   "])
-def test_sheets_requiere_identificador_no_vacio(
-    monkeypatch: pytest.MonkeyPatch, identificador: str
+def test_base_explicit_overrides_over_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("AC_REPOSITORIO", "sheets")
-    monkeypatch.setenv("AC_SPREADSHEET_ID", identificador)
+    monkeypatch.setenv("CA_BASE_DIRECTORY", str(tmp_path / "base_of_environment"))
 
-    with pytest.raises(ValidationError, match="AC_SPREADSHEET_ID"):
-        cargar_config(ruta_env=None)
+    configuration = load_config(path_env=None, base_directory=tmp_path / "base_explicit")
 
-
-def test_sheets_requiere_identificador_ausente(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AC_REPOSITORIO", "sheets")
-
-    with pytest.raises(ValidationError, match="AC_SPREADSHEET_ID"):
-        cargar_config(ruta_env=None)
+    assert configuration.base_directory == tmp_path / "base_explicit"
 
 
-def test_sheets_no_abre_credenciales_al_cargar(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AC_REPOSITORIO", "sheets")
-    monkeypatch.setenv("AC_SPREADSHEET_ID", "  identificador_de_prueba  ")
+def test_path_absolute_no_reinterprets(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path_absolute = tmp_path / "location_independent/clients.xlsx"
+    monkeypatch.setenv("CA_EXCEL_PATH", str(path_absolute))
 
-    configuracion = cargar_config(ruta_env=None)
+    configuration = load_config(path_env=None, base_directory=tmp_path / "other_base")
 
-    assert configuracion.spreadsheet_id == "identificador_de_prueba"
-    assert not configuracion.credentials_path.exists()
-    assert "identificador_de_prueba" not in repr(configuracion)
+    assert configuration.excel_path == path_absolute
+
+
+@pytest.mark.parametrize("identifier", ["", "   "])
+def test_sheets_requires_identifier_no_empty(
+    monkeypatch: pytest.MonkeyPatch, identifier: str
+) -> None:
+    monkeypatch.setenv("CA_REPOSITORY", "sheets")
+    monkeypatch.setenv("CA_SPREADSHEET_ID", identifier)
+
+    with pytest.raises(ValidationError, match="CA_SPREADSHEET_ID"):
+        load_config(path_env=None)
+
+
+def test_sheets_requires_identifier_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CA_REPOSITORY", "sheets")
+
+    with pytest.raises(ValidationError, match="CA_SPREADSHEET_ID"):
+        load_config(path_env=None)
+
+
+def test_sheets_no_opens_credentials_on_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CA_REPOSITORY", "sheets")
+    monkeypatch.setenv("CA_SPREADSHEET_ID", "  identifier_of_sample  ")
+
+    configuration = load_config(path_env=None)
+
+    assert configuration.spreadsheet_id == "identifier_of_sample"
+    assert not configuration.credentials_path.exists()
+    assert "identifier_of_sample" not in repr(configuration)
 
 
 @pytest.mark.parametrize(
-    ("nombre", "valor"),
+    ("name", "value"),
     [
-        ("AC_REINTENTOS_MAXIMOS", "0"),
-        ("AC_REINTENTOS_MAXIMOS", "11"),
-        ("AC_TIMEOUT_RED_SEGUNDOS", "0"),
-        ("AC_TIMEOUT_RED_SEGUNDOS", "nan"),
-        ("AC_TIMEOUT_RED_SEGUNDOS", "inf"),
-        ("AC_REINTENTO_ESPERA_MINIMA_SEGUNDOS", "-1"),
-        ("AC_REINTENTO_ESPERA_MAXIMA_SEGUNDOS", "inf"),
-        ("AC_REPOSITORIO", "inexistente"),
-        ("AC_LOG_LEVEL", "INVALIDO"),
-        ("AC_ENTORNO", "invalido"),
-        ("AC_SIMULACION", "quizas"),
-        ("AC_ZONA_HORARIA", "Zona/Inexistente"),
-        ("AC_EXCEL_PATH", "   "),
-        ("AC_RESOLUCION_PATH", "   "),
-        ("AC_DIRECTORIO_BASE", ""),
+        ("CA_MAX_ATTEMPTS", "0"),
+        ("CA_MAX_ATTEMPTS", "11"),
+        ("CA_NETWORK_TIMEOUT_SECONDS", "0"),
+        ("CA_NETWORK_TIMEOUT_SECONDS", "nan"),
+        ("CA_NETWORK_TIMEOUT_SECONDS", "inf"),
+        ("CA_RETRY_MIN_WAIT_SECONDS", "-1"),
+        ("CA_RETRY_MAX_WAIT_SECONDS", "inf"),
+        ("CA_REPOSITORY", "nonexistent"),
+        ("CA_LOG_LEVEL", "INVALID"),
+        ("CA_ENVIRONMENT", "invalid"),
+        ("CA_DRY_RUN", "maybe"),
+        ("CA_TIME_ZONE", "Zone/Nonexistent"),
+        ("CA_EXCEL_PATH", "   "),
+        ("CA_RESOLUTION_PATH", "   "),
+        ("CA_BASE_DIRECTORY", ""),
     ],
 )
-def test_rechaza_opciones_invalidas(
-    monkeypatch: pytest.MonkeyPatch, nombre: str, valor: str
-) -> None:
-    monkeypatch.setenv(nombre, valor)
+def test_rejects_options_invalid(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
+    monkeypatch.setenv(name, value)
 
     with pytest.raises(ValidationError):
-        cargar_config(ruta_env=None)
+        load_config(path_env=None)
 
 
-def test_rechaza_esperas_invertidas(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AC_REINTENTO_ESPERA_MINIMA_SEGUNDOS", "60")
-    monkeypatch.setenv("AC_REINTENTO_ESPERA_MAXIMA_SEGUNDOS", "30")
+def test_rejects_waits_reversed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CA_RETRY_MIN_WAIT_SECONDS", "60")
+    monkeypatch.setenv("CA_RETRY_MAX_WAIT_SECONDS", "30")
 
-    with pytest.raises(ValidationError, match="espera mínima"):
-        cargar_config(ruta_env=None)
-
-
-def test_token_no_puede_sobrescribir_credenciales(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AC_CREDENTIALS_PATH", "secretos/mismo_archivo.json")
-    monkeypatch.setenv("AC_TOKEN_PATH", "secretos/mismo_archivo.json")
-
-    with pytest.raises(ValidationError, match="archivos distintos"):
-        cargar_config(ruta_env=None)
+    with pytest.raises(ValidationError, match="minimum retry wait"):
+        load_config(path_env=None)
 
 
-def test_configuracion_es_inmutable() -> None:
-    configuracion = cargar_config(ruta_env=None)
+def test_token_no_can_overwrite_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CA_CREDENTIALS_PATH", "secrets/same_file.json")
+    monkeypatch.setenv("CA_TOKEN_PATH", "secrets/same_file.json")
+
+    with pytest.raises(ValidationError, match="separate files"):
+        load_config(path_env=None)
+
+
+def test_configuration_is_immutable() -> None:
+    configuration = load_config(path_env=None)
 
     with pytest.raises(ValidationError, match="frozen"):
-        configuracion.__setattr__("simulacion", False)
+        configuration.__setattr__("dry_run", False)
 
 
-def test_ruta_del_informe_se_configura_desde_entorno_y_base(
+def test_path_of_report_configures_start_date_environment_and_base(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("AC_RESOLUCION_PATH", "informes/resultado.json")
-    base = tmp_path / "base_configurada"
+    monkeypatch.setenv("CA_RESOLUTION_PATH", "reports/result.json")
+    base = tmp_path / "base_configured"
 
-    configuracion = cargar_config(ruta_env=None, directorio_base=base)
+    configuration = load_config(path_env=None, base_directory=base)
 
-    assert configuracion.resolucion_path == base / "informes/resultado.json"
+    assert configuration.resolution_path == base / "reports/result.json"
     assert not base.exists()
 
 
-def test_cargas_sucesivas_no_reutilizan_configuracion(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert cargar_config(ruta_env=None).log_level == "INFO"
-    monkeypatch.setenv("AC_LOG_LEVEL", "DEBUG")
+def test_loads_successive_no_reuse_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert load_config(path_env=None).log_level == "INFO"
+    monkeypatch.setenv("CA_LOG_LEVEL", "DEBUG")
 
-    assert cargar_config(ruta_env=None).log_level == "DEBUG"
-
-
-def test_politica_predeterminada_coincide_con_el_dominio() -> None:
-    assert cargar_config(ruta_env=None).crear_politica_coincidencia() == PoliticaCoincidencia()
+    assert load_config(path_env=None).log_level == "DEBUG"
 
 
-def test_politica_se_puede_configurar_desde_el_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AC_UMBRAL_COINCIDENCIA_AUTOMATICO", "98")
-    monkeypatch.setenv("AC_UMBRAL_COINCIDENCIA_REVISION", "90")
-    monkeypatch.setenv("AC_LIMITE_SUGERENCIAS_COINCIDENCIA", "5")
+def test_policy_default_matches_with_the_domain() -> None:
+    assert load_config(path_env=None).create_matching_policy() == MatchingPolicy()
 
-    assert cargar_config(ruta_env=None).crear_politica_coincidencia() == PoliticaCoincidencia(
-        umbral_automatico=98.0, umbral_revision=90.0, limite_sugerencias=5
+
+def test_policy_can_configure_start_date_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CA_AUTOMATIC_MATCH_THRESHOLD", "98")
+    monkeypatch.setenv("CA_REVIEW_MATCH_THRESHOLD", "90")
+    monkeypatch.setenv("CA_MATCH_SUGGESTION_LIMIT", "5")
+
+    assert load_config(path_env=None).create_matching_policy() == MatchingPolicy(
+        automatic_threshold=98.0, review_threshold=90.0, suggestion_limit=5
     )
 
 
 @pytest.mark.parametrize(
-    ("automatico", "revision", "limite"),
+    ("automatic", "revision", "limit"),
     [
         ("80", "80", "3"),
         ("80", "92", "3"),
@@ -235,12 +235,12 @@ def test_politica_se_puede_configurar_desde_el_entorno(monkeypatch: pytest.Monke
         ("92", "80", "0"),
     ],
 )
-def test_configuracion_rechaza_politica_inconsistente(
-    monkeypatch: pytest.MonkeyPatch, automatico: str, revision: str, limite: str
+def test_configuration_rejects_policy_inconsistent(
+    monkeypatch: pytest.MonkeyPatch, automatic: str, revision: str, limit: str
 ) -> None:
-    monkeypatch.setenv("AC_UMBRAL_COINCIDENCIA_AUTOMATICO", automatico)
-    monkeypatch.setenv("AC_UMBRAL_COINCIDENCIA_REVISION", revision)
-    monkeypatch.setenv("AC_LIMITE_SUGERENCIAS_COINCIDENCIA", limite)
+    monkeypatch.setenv("CA_AUTOMATIC_MATCH_THRESHOLD", automatic)
+    monkeypatch.setenv("CA_REVIEW_MATCH_THRESHOLD", revision)
+    monkeypatch.setenv("CA_MATCH_SUGGESTION_LIMIT", limit)
 
     with pytest.raises(ValidationError):
-        cargar_config(ruta_env=None)
+        load_config(path_env=None)

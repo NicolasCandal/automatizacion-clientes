@@ -1,13 +1,13 @@
-"""Comando retirado; el punto de entrada único es automatizacion-clientes."""
+"""Retired command; use the client-automation entry point."""
 
 from collections.abc import Sequence
 
-from automatizacion_clientes.utils.cli_compatibilidad import comando_retirado
+from client_automation.utils.legacy_cli import command_retired
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Informa cómo migrar sin ejecutar operaciones ni exponer argumentos."""
-    return comando_retirado(argv)
+    """Report the supported command without running operations or exposing arguments."""
+    return command_retired(argv)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-# Datos sintéticos
+# Synthetic test fixtures
 
-Los nombres de los fixtures y de los tests son palabras inventadas, sin una
-tabla de correspondencia con personas reales. Los teléfonos y credenciales
-incluidos en pruebas son valores ficticios y no deben usarse para contactar
-personas ni acceder a servicios.
+Names in fixtures and tests are invented words. No correspondence table with
+real people is included. Test phone numbers and credentials are synthetic and
+must never be used to contact people or access services.
 
-No incorporar exportaciones de WhatsApp, Excel de clientes, catálogos, aliases,
-resoluciones ni secretos reales. Crear cualquier archivo necesario para una
-prueba dentro del directorio temporal de pytest.
+Do not add real WhatsApp exports, client workbooks, catalogs, aliases, reports,
+or credentials. Create any files required by a test inside pytest's temporary
+directory. Unicode input fixtures intentionally include accented and international
+characters to exercise normalization and export parsing.

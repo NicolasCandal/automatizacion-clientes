@@ -1,22 +1,22 @@
-# Secretos y credenciales — nunca versionar
+# Credentials and private local settings
 credentials.json
 token.json
 .env
 .env.*
 !.env.example
-secretos/
+secrets/
 
-# Datos de clientes reales — no versionar
-datos/
-catalogo.json
-.cache_catalogo.json
-resolucion.json
+# Client records and generated state
+data/
+catalog.json
+.catalog_cache.json
+resolution.json
 aliases.json
-lista_negra.json
+exclusion_list.json
 logs/
-*.respaldo_*.xlsx
+*.backup_*.xlsx
 
-# Entradas y respaldos: solo se admiten fixtures explícitos y sintéticos.
+# Inputs and backups: allow only explicit synthetic examples.
 *.xlsx
 *.xls
 *.xlsm
@@ -24,14 +24,14 @@ logs/
 *.csv
 *.tsv
 *.txt
-!examples/whatsapp/contacto_demo.txt
-!examples/whatsapp/grupo_demo.txt
+!examples/whatsapp/contact_demo.txt
+!examples/whatsapp/group_demo.txt
 *.json
 *.jsonl
 *.ndjson
 !tests/fixtures/
-!tests/fixtures/semana_ejemplo.json
-!examples/whatsapp/manifiesto.json
+!tests/fixtures/weekly_example.json
+!examples/whatsapp/manifest.json
 *.log
 *.bak
 *.zip
@@ -40,12 +40,12 @@ logs/
 *.p12
 *.pfx
 
-# Configuraciones locales de asistentes que pueden contener rutas o comandos.
+# Local assistant settings may contain private paths or commands.
 .claude/
 .codex/
 .agents/
 
-# Python
+# Python and generated artifacts
 .venv/
 __pycache__/
 *.pyc

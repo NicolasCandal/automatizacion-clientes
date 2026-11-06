@@ -1,4 +1,4 @@
-"""Comando Sheets con SDK real, HTTP simulado y credenciales sintéticas temporales."""
+"""Sheets CLI with the real SDK, mocked HTTP, and temporary synthetic credentials."""
 
 import json
 from collections.abc import Callable, Mapping
@@ -16,517 +16,517 @@ from requests import PreparedRequest, Response
 from requests.adapters import HTTPAdapter
 from requests.exceptions import Timeout
 
-from automatizacion_clientes import main as entrada
-from automatizacion_clientes.config import Config
-from automatizacion_clientes.core.errores import AutorizacionError, PersistenciaError
-from automatizacion_clientes.core.modelos import ResolucionSemanal
-from automatizacion_clientes.infra.almacen_aliases_json import AlmacenAliasesJson
-from automatizacion_clientes.infra.almacen_catalogo_json import AlmacenCatalogoJson
-from automatizacion_clientes.infra.almacen_resoluciones_json import AlmacenResolucionesJson
-from automatizacion_clientes.infra.almacenamiento_json import guardar_json
-from automatizacion_clientes.infra.autenticacion_google import ProveedorCredencialesGoogle
-from automatizacion_clientes.infra.escritor_clientes_sheets import EscritorClientesSheets
-from automatizacion_clientes.infra.lector_clientes_sheets import (
-    LectorClientesSheets,
-    crear_lector_sheets,
+from client_automation import main as input
+from client_automation.config import Config
+from client_automation.core.errors import AuthorizationError, PersistenceError
+from client_automation.core.models import WeeklyResolution
+from client_automation.infra.google_authentication import GoogleCredentialsProvider
+from client_automation.infra.json_alias_store import JsonAliasStore
+from client_automation.infra.json_catalog_store import JsonCatalogStore
+from client_automation.infra.json_contact_reader import JsonContactReader
+from client_automation.infra.json_resolution_store import JsonResolutionStore
+from client_automation.infra.json_storage import save_json
+from client_automation.infra.sheets_client_reader import (
+    SheetsClientReader,
+    create_reader_sheets,
 )
-from automatizacion_clientes.infra.lector_contactos_json import LectorContactosJson
+from client_automation.infra.sheets_client_writer import SheetsClientWriter
 
-ALCANCE = "https://www.googleapis.com/auth/spreadsheets"
-ALCANCE_LECTURA = "https://www.googleapis.com/auth/spreadsheets.readonly"
-type Objeto = dict[str, object]
-
-
-def objeto(valor: object) -> Objeto:
-    return cast(Objeto, valor)
+SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+READ_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
+type Object = dict[str, object]
 
 
-def lista(valor: object) -> list[Objeto]:
-    return cast(list[Objeto], valor)
+def require_object(value: object) -> Object:
+    return cast(Object, value)
 
 
-def hoja(documento: Objeto, nombre: str) -> Objeto:
+def require_list(value: object) -> list[Object]:
+    return cast(list[Object], value)
+
+
+def sheet(document: Object, name: str) -> Object:
     return next(
-        destino
-        for destino in lista(documento["sheets"])
-        if objeto(destino["properties"])["title"] == nombre
+        destination
+        for destination in require_list(document["sheets"])
+        if require_object(destination["properties"])["title"] == name
     )
 
 
-def celda(destino: Objeto, fila: int, columna: int) -> Objeto:
-    filas = lista(lista(destino["data"])[0]["rowData"])
-    while len(filas) < fila:
-        filas.append({"values": []})
-    valores = lista(filas[fila - 1]["values"])
-    while len(valores) < columna:
-        valores.append({})
-    return valores[columna - 1]
+def cell(destination: Object, row: int, column: int) -> Object:
+    rows = require_list(require_list(destination["data"])[0]["rowData"])
+    while len(rows) < row:
+        rows.append({"values": []})
+    values = require_list(rows[row - 1]["values"])
+    while len(values) < column:
+        values.append({})
+    return values[column - 1]
 
 
-def respuesta(documento: object, estado: int = 200) -> Response:
-    resultado = Response()
-    resultado.status_code = estado
-    resultado.encoding = "utf-8"
-    resultado._content = json.dumps(documento).encode("utf-8")
-    _ = resultado.content
-    return resultado
+def response(document: object, state: int = 200) -> Response:
+    result = Response()
+    result.status_code = state
+    result.encoding = "utf-8"
+    result._content = json.dumps(document).encode("utf-8")
+    _ = result.content
+    return result
 
 
-class ApiSimulada:
+class FakeApi:
     def __init__(self) -> None:
-        self.documento: Objeto = {"spreadsheetId": "documento_sintetico", "sheets": []}
-        self.lotes: list[Objeto] = []
-        self.consultas = 0
-        self.renovaciones = 0
-        self.alcance = ALCANCE
-        self.fallar_tras_hoja: str | None = None
-        self.estado_lectura = 200
-        for indice, nombre in enumerate(("Inviu", "IOL", "Bull", "Balanz", "PPI")):
-            destino: Objeto = {
+        self.document: Object = {"spreadsheetId": "document_synthetic", "sheets": []}
+        self.batches: list[Object] = []
+        self.queries = 0
+        self.refreshes = 0
+        self.scope = SCOPE
+        self.fail_after_sheet: str | None = None
+        self.state_read = 200
+        for catalog_index, name in enumerate(("Inviu", "IOL", "Bull", "Balanz", "PPI")):
+            destination: Object = {
                 "properties": {
-                    "title": nombre,
-                    "sheetId": indice,
+                    "title": name,
+                    "sheetId": catalog_index,
                     "gridProperties": {"rowCount": 100, "columnCount": 8},
                 },
                 "data": [{"rowData": []}],
             }
-            celda(destino, 1, 1)["userEnteredValue"] = {"stringValue": "Cliente"}
-            celda(destino, 2, 4 if nombre == "Balanz" else 3)["userEnteredValue"] = {
-                "stringValue": "Anterior"
+            cell(destination, 1, 1)["userEnteredValue"] = {"stringValue": "Client"}
+            cell(destination, 2, 4 if name == "Balanz" else 3)["userEnteredValue"] = {
+                "stringValue": "Previous"
             }
-            celda(destino, 3, 1)["userEnteredValue"] = {"stringValue": "Axa Prueba"}
-            celda(destino, 5, 1)["userEnteredValue"] = {"stringValue": "Notuka Ejemplo"}
-            celda(destino, 3, 2)["userEnteredValue"] = {"formulaValue": "=100+200"}
-            if nombre == "IOL":
-                celda(destino, 8, 1)["userEnteredValue"] = {
-                    "stringValue": "AXA PRUEBA Y/O NOTUKA EJEMPLO"
+            cell(destination, 3, 1)["userEnteredValue"] = {"stringValue": "Axa Sample"}
+            cell(destination, 5, 1)["userEnteredValue"] = {"stringValue": "Notuka Example"}
+            cell(destination, 3, 2)["userEnteredValue"] = {"formulaValue": "=100+200"}
+            if name == "IOL":
+                cell(destination, 8, 1)["userEnteredValue"] = {
+                    "stringValue": "AXA SAMPLE AND/OR NOTUKA EXAMPLE"
                 }
-            lista(self.documento["sheets"]).append(destino)
+            require_list(self.document["sheets"]).append(destination)
 
-    def enviar(self, request: PreparedRequest, **opciones: object) -> Response:
-        assert opciones["timeout"] is not None
+    def send(self, request: PreparedRequest, **options: object) -> Response:
+        assert options["timeout"] is not None
         if request.url == "https://oauth2.googleapis.com/token":
             assert request.method == "POST"
-            self.renovaciones += 1
-            return respuesta(
+            self.refreshes += 1
+            return response(
                 {
-                    "access_token": "acceso_renovado_ficticio",
+                    "access_token": "access_refreshed_fake",
                     "expires_in": 3600,
                     "token_type": "Bearer",
-                    "scope": self.alcance,
+                    "scope": self.scope,
                 }
             )
         assert request.url is not None
         assert request.url.startswith(
-            "https://sheets.googleapis.com/v4/spreadsheets/documento_sintetico"
+            "https://sheets.googleapis.com/v4/spreadsheets/document_synthetic"
         )
         assert request.headers["authorization"] in {
-            "Bearer acceso_ficticio",
-            "Bearer acceso_renovado_ficticio",
+            "Bearer access_fake",
+            "Bearer access_refreshed_fake",
         }
         if request.method == "GET":
-            self.consultas += 1
-            return respuesta(
-                self.documento if self.estado_lectura == 200 else {"error": "ficticio"},
-                self.estado_lectura,
+            self.queries += 1
+            return response(
+                self.document if self.state_read == 200 else {"error": "fake"},
+                self.state_read,
             )
         assert request.method == "POST"
         assert request.url.endswith(":batchUpdate")
-        cuerpo = request.body
-        assert isinstance(cuerpo, (str, bytes))
-        contenido = objeto(json.loads(cuerpo))
-        self.lotes.append(contenido)
-        nombre = ""
-        for peticion in lista(contenido["requests"]):
-            actualizacion = objeto(peticion["updateCells"])
-            inicio = objeto(actualizacion["start"])
-            destino = next(
-                destino
-                for destino in lista(self.documento["sheets"])
-                if objeto(destino["properties"])["sheetId"] == inicio["sheetId"]
+        body = request.body
+        assert isinstance(body, (str, bytes))
+        content = require_object(json.loads(body))
+        self.batches.append(content)
+        name = ""
+        for batch_request in require_list(content["requests"]):
+            update = require_object(batch_request["updateCells"])
+            start = require_object(update["start"])
+            destination = next(
+                destination
+                for destination in require_list(self.document["sheets"])
+                if require_object(destination["properties"])["sheetId"] == start["sheetId"]
             )
-            nombre = cast(str, objeto(destino["properties"])["title"])
-            for desplazamiento, fila in enumerate(lista(actualizacion["rows"]), 1):
-                valor = lista(fila["values"])[0]
-                actual = celda(
-                    destino,
-                    cast(int, inicio["rowIndex"]) + desplazamiento,
-                    cast(int, inicio["columnIndex"]) + 1,
+            name = cast(str, require_object(destination["properties"])["title"])
+            for offset, row in enumerate(require_list(update["rows"]), 1):
+                value = require_list(row["values"])[0]
+                current = cell(
+                    destination,
+                    cast(int, start["rowIndex"]) + offset,
+                    cast(int, start["columnIndex"]) + 1,
                 )
-                actual.pop("userEnteredValue", None)
-                actual.pop("effectiveValue", None)
-                if "userEnteredValue" in valor:
-                    actual["userEnteredValue"] = deepcopy(valor["userEnteredValue"])
-                if "userEnteredFormat" in valor:
-                    formato = objeto(actual.setdefault("userEnteredFormat", {}))
-                    formato.update(deepcopy(objeto(valor["userEnteredFormat"])))
-                    actual["effectiveFormat"] = deepcopy(formato)
-        if self.fallar_tras_hoja == nombre:
-            raise Timeout("ficticio después de aplicar")
-        return respuesta({"spreadsheetId": "documento_sintetico"})
+                current.pop("userEnteredValue", None)
+                current.pop("effectiveValue", None)
+                if "userEnteredValue" in value:
+                    current["userEnteredValue"] = deepcopy(value["userEnteredValue"])
+                if "userEnteredFormat" in value:
+                    format = require_object(current.setdefault("userEnteredFormat", {}))
+                    format.update(deepcopy(require_object(value["userEnteredFormat"])))
+                    current["effectiveFormat"] = deepcopy(format)
+        if self.fail_after_sheet == name:
+            raise Timeout("synthetic failure after applying")
+        return response({"spreadsheetId": "document_synthetic"})
 
 
 @dataclass
-class Escenario:
-    configuracion: Config
-    api: ApiSimulada
+class Scenario:
+    configuration: Config
+    api: FakeApi
 
-    def argumentos(self, *opciones: str) -> list[str]:
+    def arguments(self, *options: str) -> list[str]:
         return [
-            "--sin-env",
-            "--directorio-base",
-            str(self.configuracion.directorio_base),
-            "--encabezado",
+            "--no-env",
+            "--base-directory",
+            str(self.configuration.base_directory),
+            "--week-header",
             "2026-11-02 / 2026-11-06",
-            *opciones,
+            *options,
         ]
 
 
 @pytest.fixture(autouse=True)
-def aislar_entorno(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
-    for nombre in tuple(environ):
-        if nombre.upper().startswith("AC_"):
-            monkeypatch.delenv(nombre)
+def isolate_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    for name in tuple(environ):
+        if name.upper().startswith("CA_"):
+            monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)
     mocker.patch("requests.sessions.get_netrc_auth", return_value=None)
     mocker.patch(
-        "webbrowser.open", side_effect=AssertionError("Navegador no autorizado por esta prueba")
+        "webbrowser.open", side_effect=AssertionError("Browser access is forbidden in this test")
     )
 
 
-def escribir_contactos(configuracion: Config, nombre: str = "Axa Prueba (IOL/Balanz)") -> None:
-    guardar_json(
-        configuracion.contactos_path,
+def write_contacts(configuration: Config, name: str = "Axa Sample (IOL/Balanz)") -> None:
+    save_json(
+        configuration.contacts_path,
         {
-            "rango": {"desde": "2026-11-02", "hasta": "2026-11-06"},
-            "contactos": [{"nombre_crudo": nombre, "ultima_fecha": "2026-11-05"}],
+            "period": {"start_date": "2026-11-02", "end_date": "2026-11-06"},
+            "contacts": [{"raw_name": name, "last_activity_date": "2026-11-05"}],
         },
     )
 
 
-def escribir_token(configuracion: Config, *, vencido: bool = False, alcance: str = ALCANCE) -> None:
-    guardar_json(
-        configuracion.token_path,
+def write_token(configuration: Config, *, expired: bool = False, scope: str = SCOPE) -> None:
+    save_json(
+        configuration.token_path,
         {
-            "token": "acceso_ficticio",
-            "refresh_token": "renovacion_ficticia",
-            "client_id": "cliente_ficticio",
-            "client_secret": "secreto_ficticio",
+            "token": "access_fake",
+            "refresh_token": "refresh_fake",
+            "client_id": "client_fake",
+            "client_secret": "secret_fake",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "scopes": [alcance],
-            "expiry": "2000-01-01T00:00:00Z" if vencido else "2099-01-01T00:00:00Z",
+            "scopes": [scope],
+            "expiry": "2000-01-01T00:00:00Z" if expired else "2099-01-01T00:00:00Z",
         },
     )
 
 
-def archivos(base: Path) -> dict[Path, bytes]:
-    return {ruta.relative_to(base): ruta.read_bytes() for ruta in base.rglob("*") if ruta.is_file()}
+def files(base: Path) -> dict[Path, bytes]:
+    return {path.relative_to(base): path.read_bytes() for path in base.rglob("*") if path.is_file()}
 
 
 @pytest.fixture
-def escenario(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> Escenario:
-    monkeypatch.setenv("AC_REPOSITORIO", "sheets")
-    monkeypatch.setenv("AC_SPREADSHEET_ID", "documento_sintetico")
-    monkeypatch.setenv("AC_GOOGLE_ALCANCES", json.dumps([ALCANCE]))
-    monkeypatch.setenv("AC_REINTENTO_ESPERA_MINIMA_SEGUNDOS", "0.001")
-    monkeypatch.setenv("AC_REINTENTO_ESPERA_MAXIMA_SEGUNDOS", "0.002")
-    configuracion = Config(directorio_base=tmp_path, _env_file=None)
-    escribir_contactos(configuracion)
-    escribir_token(configuracion)
-    api = ApiSimulada()
-    mocker.patch.object(HTTPAdapter, "send", side_effect=api.enviar)
-    return Escenario(configuracion, api)
+def scenario(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> Scenario:
+    monkeypatch.setenv("CA_REPOSITORY", "sheets")
+    monkeypatch.setenv("CA_SPREADSHEET_ID", "document_synthetic")
+    monkeypatch.setenv("CA_GOOGLE_SCOPES", json.dumps([SCOPE]))
+    monkeypatch.setenv("CA_RETRY_MIN_WAIT_SECONDS", "0.001")
+    monkeypatch.setenv("CA_RETRY_MAX_WAIT_SECONDS", "0.002")
+    configuration = Config(base_directory=tmp_path, _env_file=None)
+    write_contacts(configuration)
+    write_token(configuration)
+    api = FakeApi()
+    mocker.patch.object(HTTPAdapter, "send", side_effect=api.send)
+    return Scenario(configuration, api)
 
 
-@pytest.mark.parametrize("vencido", [False, True])
-def test_simulacion_no_guarda_archivos_ni_construye_escritor(
-    escenario: Escenario,
+@pytest.mark.parametrize("expired", [False, True])
+def test_dry_run_no_saves_files_nor_builds_writer(
+    scenario: Scenario,
     mocker: MockerFixture,
     capsys: pytest.CaptureFixture[str],
-    vencido: bool,
+    expired: bool,
 ) -> None:
-    configuracion = escenario.configuracion
-    escribir_token(configuracion, vencido=vencido)
-    originales = archivos(configuracion.directorio_base)
-    documento = deepcopy(escenario.api.documento)
-    fabrica = mocker.patch.object(entrada, "crear_escritor_sheets")
-    assert entrada.main(escenario.argumentos()) == 0
-    fabrica.assert_not_called()
-    assert archivos(configuracion.directorio_base) == originales
-    assert escenario.api.documento == documento
-    assert not escenario.api.lotes
-    assert escenario.api.renovaciones == int(vencido)
-    salida = capsys.readouterr()
-    assert salida.out == ""
-    assert "Plan de hoja: IOL; columna=4" in salida.err
-    for secreto in (
-        "Axa Prueba",
-        "secreto_ficticio",
-        "acceso_ficticio",
-        "documento_sintetico",
-        str(configuracion.token_path),
+    configuration = scenario.configuration
+    write_token(configuration, expired=expired)
+    original = files(configuration.base_directory)
+    document = deepcopy(scenario.api.document)
+    factory = mocker.patch.object(input, "create_writer_sheets")
+    assert input.main(scenario.arguments()) == 0
+    factory.assert_not_called()
+    assert files(configuration.base_directory) == original
+    assert scenario.api.document == document
+    assert not scenario.api.batches
+    assert scenario.api.refreshes == int(expired)
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "Sheet plan: IOL; column=4" in output.err
+    for secret in (
+        "Axa Sample",
+        "secret_fake",
+        "access_fake",
+        "document_synthetic",
+        str(configuration.token_path),
     ):
-        assert secreto not in salida.err
+        assert secret not in output.err
 
 
-def test_aplicar_conecta_todo_y_repetir_no_crea_otro_respaldo(
-    escenario: Escenario,
+def test_apply_connects_all_and_repeat_no_creates_other_backup(
+    scenario: Scenario,
     mocker: MockerFixture,
 ) -> None:
-    configuracion = escenario.configuracion
-    original = deepcopy(escenario.api.documento)
-    leer_contactos = mocker.spy(LectorContactosJson, "leer")
-    assert entrada.main(escenario.argumentos("--aplicar")) == 0
-    leer_contactos.assert_called_once()
-    respaldos = list(configuracion.directorio_respaldos.iterdir())
-    assert len(respaldos) == 1
-    assert objeto(json.loads(respaldos[0].read_text(encoding="utf-8")))["documento"] == original
-    catalogo = AlmacenCatalogoJson(configuracion.catalogo_path).leer()
-    assert catalogo is not None
-    assert catalogo.identificador_origen == "sheets:documento_sintetico"
-    assert len(AlmacenResolucionesJson(configuracion.resolucion_path).leer().resueltos) == 1
+    configuration = scenario.configuration
+    original = deepcopy(scenario.api.document)
+    read_contacts = mocker.spy(JsonContactReader, "read")
+    assert input.main(scenario.arguments("--apply")) == 0
+    read_contacts.assert_called_once()
+    backups = list(configuration.backup_directory.iterdir())
+    assert len(backups) == 1
     assert (
-        AlmacenAliasesJson(configuracion.aliases_path).buscar_por_nombre("Axa Prueba (IOL/Balanz)")
+        require_object(json.loads(backups[0].read_text(encoding="utf-8")))["document"] == original
+    )
+    catalog = JsonCatalogStore(configuration.catalog_path).read()
+    assert catalog is not None
+    assert catalog.source_id == "sheets:document_synthetic"
+    assert len(JsonResolutionStore(configuration.resolution_path).read().resolved) == 1
+    assert (
+        JsonAliasStore(configuration.aliases_path).find_by_name("Axa Sample (IOL/Balanz)")
         is not None
     )
-    credenciales = ProveedorCredencialesGoogle(configuracion).cargar()
-    with crear_lector_sheets(configuracion, credenciales) as lector:
-        assert lector.leer_marcas("IOL", 4) == frozenset({3, 8})
-        assert lector.leer_marcas("Balanz", 5) == frozenset({3})
-        assert lector.leer_marcas("Bull", 4) == frozenset()
-    assert celda(hoja(escenario.api.documento, "IOL"), 3, 2) == celda(hoja(original, "IOL"), 3, 2)
-    assert len(escenario.api.lotes) == 5
-    assert entrada.main(escenario.argumentos("--aplicar")) == 0
-    assert len(escenario.api.lotes) == 5
-    assert list(configuracion.directorio_respaldos.iterdir()) == respaldos
+    credentials = GoogleCredentialsProvider(configuration).load()
+    with create_reader_sheets(configuration, credentials) as reader:
+        assert reader.read_marks("IOL", 4) == frozenset({3, 8})
+        assert reader.read_marks("Balanz", 5) == frozenset({3})
+        assert reader.read_marks("Bull", 4) == frozenset()
+    assert cell(sheet(scenario.api.document, "IOL"), 3, 2) == cell(sheet(original, "IOL"), 3, 2)
+    assert len(scenario.api.batches) == 5
+    assert input.main(scenario.arguments("--apply")) == 0
+    assert len(scenario.api.batches) == 5
+    assert list(configuration.backup_directory.iterdir()) == backups
 
 
-def test_token_renovado_se_guarda_en_modo_real(escenario: Escenario) -> None:
-    escribir_token(escenario.configuracion, vencido=True)
-    assert entrada.main(escenario.argumentos("--aplicar")) == 0
-    assert escenario.api.renovaciones == 1
-    token = objeto(json.loads(escenario.configuracion.token_path.read_text(encoding="utf-8")))
-    assert token["token"] == "acceso_renovado_ficticio"
+def test_token_refreshed_saves_in_mode_real(scenario: Scenario) -> None:
+    write_token(scenario.configuration, expired=True)
+    assert input.main(scenario.arguments("--apply")) == 0
+    assert scenario.api.refreshes == 1
+    token = require_object(
+        json.loads(scenario.configuration.token_path.read_text(encoding="utf-8"))
+    )
+    assert token["token"] == "access_refreshed_fake"
 
 
-@pytest.mark.parametrize("aplicar", [False, True])
-def test_solo_lectura_simula_y_rechaza_aplicar_antes_de_autenticar(
-    escenario: Escenario,
+@pytest.mark.parametrize("apply", [False, True])
+def test_only_read_dry_runs_and_rejects_apply_before_of_authenticate(
+    scenario: Scenario,
     monkeypatch: pytest.MonkeyPatch,
     mocker: MockerFixture,
-    aplicar: bool,
+    apply: bool,
 ) -> None:
-    monkeypatch.setenv("AC_GOOGLE_ALCANCES", json.dumps([ALCANCE_LECTURA]))
-    escribir_token(escenario.configuracion, alcance=ALCANCE_LECTURA)
-    carga = mocker.spy(ProveedorCredencialesGoogle, "cargar")
-    originales = archivos(escenario.configuracion.directorio_base)
-    assert entrada.main(escenario.argumentos(*(["--aplicar"] if aplicar else []))) == (
-        2 if aplicar else 0
-    )
-    assert carga.call_count == (0 if aplicar else 1)
-    assert not escenario.api.lotes
-    assert archivos(escenario.configuracion.directorio_base) == originales
+    monkeypatch.setenv("CA_GOOGLE_SCOPES", json.dumps([READ_SCOPE]))
+    write_token(scenario.configuration, scope=READ_SCOPE)
+    load = mocker.spy(GoogleCredentialsProvider, "load")
+    original = files(scenario.configuration.base_directory)
+    assert input.main(scenario.arguments(*(["--apply"] if apply else []))) == (2 if apply else 0)
+    assert load.call_count == (0 if apply else 1)
+    assert not scenario.api.batches
+    assert files(scenario.configuration.base_directory) == original
 
 
-@pytest.mark.parametrize("aplicar", [False, True])
-def test_pendientes_bloquean_marcas_y_en_real_guardan_informe(
-    escenario: Escenario,
-    aplicar: bool,
+@pytest.mark.parametrize("apply", [False, True])
+def test_pending_block_marks_and_in_real_save_report(
+    scenario: Scenario,
+    apply: bool,
 ) -> None:
-    configuracion = escenario.configuracion
-    escribir_contactos(configuracion, "Identidad inexistente zzz 987")
-    assert entrada.main(escenario.argumentos(*(["--aplicar"] if aplicar else []))) == 3
-    assert not escenario.api.lotes
-    assert not configuracion.directorio_respaldos.exists()
-    assert not configuracion.aliases_path.exists()
-    assert configuracion.catalogo_path.exists() is aplicar
-    assert configuracion.resolucion_path.exists() is aplicar
+    configuration = scenario.configuration
+    write_contacts(configuration, "Unknown identity zzz 987")
+    assert input.main(scenario.arguments(*(["--apply"] if apply else []))) == 3
+    assert not scenario.api.batches
+    assert not configuration.backup_directory.exists()
+    assert not configuration.aliases_path.exists()
+    assert configuration.catalog_path.exists() is apply
+    assert configuration.resolution_path.exists() is apply
 
 
-def test_permitir_pendientes_aplica_solo_resueltos(escenario: Escenario) -> None:
-    escribir_contactos(escenario.configuracion, "Identidad inexistente zzz 987")
-    assert entrada.main(escenario.argumentos("--aplicar", "--permitir-pendientes")) == 0
-    assert len(escenario.api.lotes) == 5
-    assert not escenario.configuracion.aliases_path.exists()
+def test_allow_pending_applies_only_resolved(scenario: Scenario) -> None:
+    write_contacts(scenario.configuration, "Unknown identity zzz 987")
+    assert input.main(scenario.arguments("--apply", "--allow-pending")) == 0
+    assert len(scenario.api.batches) == 5
+    assert not scenario.configuration.aliases_path.exists()
 
 
-@pytest.mark.parametrize("simular", [False, True])
-def test_modo_del_entorno_y_override_se_respetan(
-    escenario: Escenario,
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_mode_of_environment_and_override_respect(
+    scenario: Scenario,
     monkeypatch: pytest.MonkeyPatch,
-    simular: bool,
+    dry_run: bool,
 ) -> None:
-    monkeypatch.setenv("AC_SIMULACION", "false")
-    assert entrada.main(escenario.argumentos(*(["--simular"] if simular else []))) == 0
-    assert bool(escenario.api.lotes) is not simular
+    monkeypatch.setenv("CA_DRY_RUN", "false")
+    assert input.main(scenario.arguments(*(["--dry-run"] if dry_run else []))) == 0
+    assert bool(scenario.api.batches) is not dry_run
 
 
-def test_token_ausente_no_inicia_oauth_automaticamente(
-    escenario: Escenario,
+def test_token_missing_no_starts_oauth_automatically(
+    scenario: Scenario,
     mocker: MockerFixture,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    escenario.configuracion.token_path.unlink()
-    autorizar = mocker.spy(ProveedorCredencialesGoogle, "autorizar")
-    assert entrada.main(escenario.argumentos()) == 4
-    autorizar.assert_not_called()
-    assert escenario.api.consultas == 0
-    assert "--autorizar-google" in capsys.readouterr().err
+    scenario.configuration.token_path.unlink()
+    authorize = mocker.spy(GoogleCredentialsProvider, "authorize")
+    assert input.main(scenario.arguments()) == 4
+    authorize.assert_not_called()
+    assert scenario.api.queries == 0
+    assert "--authorize-google" in capsys.readouterr().err
 
 
-def test_fallo_de_contactos_cierra_lector_y_escritor(
-    escenario: Escenario,
+def test_failure_of_contacts_closes_reader_and_writer(
+    scenario: Scenario,
     mocker: MockerFixture,
 ) -> None:
-    escenario.configuracion.contactos_path.write_bytes(b"{invalido")
-    lector = mocker.spy(LectorClientesSheets, "cerrar")
-    escritor = mocker.spy(EscritorClientesSheets, "cerrar")
-    assert entrada.main(escenario.argumentos("--aplicar")) == 2
-    escritor.assert_called_once()
-    assert lector.call_count == 2  # lector del flujo e interno del escritor
-    assert not escenario.api.lotes
+    scenario.configuration.contacts_path.write_bytes(b"{invalido")
+    reader = mocker.spy(SheetsClientReader, "close")
+    writer = mocker.spy(SheetsClientWriter, "close")
+    assert input.main(scenario.arguments("--apply")) == 2
+    writer.assert_called_once()
+    assert reader.call_count == 2  # The workflow reader and the writer's internal reader.
+    assert not scenario.api.batches
 
 
-def test_fallo_del_informe_impide_respaldos_y_marcas(
-    escenario: Escenario,
+def test_failure_of_report_prevents_backups_and_marks(
+    scenario: Scenario,
     mocker: MockerFixture,
 ) -> None:
-    mocker.patch.object(
-        AlmacenResolucionesJson, "guardar", side_effect=PersistenciaError("ficticio")
-    )
-    assert entrada.main(escenario.argumentos("--aplicar")) == 4
-    assert not escenario.api.lotes
-    assert not escenario.configuracion.directorio_respaldos.exists()
+    mocker.patch.object(JsonResolutionStore, "save", side_effect=PersistenceError("fake"))
+    assert input.main(scenario.arguments("--apply")) == 4
+    assert not scenario.api.batches
+    assert not scenario.configuration.backup_directory.exists()
 
 
-def test_cambio_tras_guardar_informe_detiene_registro(
-    escenario: Escenario,
+def test_change_after_save_report_stops_registration(
+    scenario: Scenario,
     mocker: MockerFixture,
 ) -> None:
-    guardar = AlmacenResolucionesJson.guardar
+    save = JsonResolutionStore.save
 
-    def guardar_y_cambiar(self: AlmacenResolucionesJson, resolucion: ResolucionSemanal) -> None:
-        guardar(self, resolucion)
-        celda(hoja(escenario.api.documento, "IOL"), 3, 1)["userEnteredValue"] = {
-            "stringValue": "Otra Persona"
+    def save_and_change(self: JsonResolutionStore, resolution: WeeklyResolution) -> None:
+        save(self, resolution)
+        cell(sheet(scenario.api.document, "IOL"), 3, 1)["userEnteredValue"] = {
+            "stringValue": "Other Person"
         }
 
-    mocker.patch.object(
-        AlmacenResolucionesJson, "guardar", autospec=True, side_effect=guardar_y_cambiar
-    )
-    assert entrada.main(escenario.argumentos("--aplicar")) == 5
-    assert not escenario.api.lotes
-    assert not escenario.configuracion.directorio_respaldos.exists()
+    mocker.patch.object(JsonResolutionStore, "save", autospec=True, side_effect=save_and_change)
+    assert input.main(scenario.arguments("--apply")) == 5
+    assert not scenario.api.batches
+    assert not scenario.configuration.backup_directory.exists()
 
 
-def test_respuesta_perdida_despues_de_aplicar_devuelve_seis_y_conserva_respaldo(
-    escenario: Escenario,
+def test_response_lost_after_of_apply_returns_six_and_preserves_backup(
+    scenario: Scenario,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    escenario.api.fallar_tras_hoja = "IOL"
-    assert entrada.main(escenario.argumentos("--aplicar")) == 6
-    assert len(escenario.api.lotes) == 2
-    assert len(list(escenario.configuracion.directorio_respaldos.iterdir())) == 1
-    salida = capsys.readouterr()
-    assert "1 hojas confirmadas" in salida.err
-    assert "hoja en curso=True" in salida.err
-    assert "Traceback" not in salida.err
+    scenario.api.fail_after_sheet = "IOL"
+    assert input.main(scenario.arguments("--apply")) == 6
+    assert len(scenario.api.batches) == 2
+    assert len(list(scenario.configuration.backup_directory.iterdir())) == 1
+    output = capsys.readouterr()
+    assert "1 sheets confirmed" in output.err
+    assert "sheet in progress=True" in output.err
+    assert "Traceback" not in output.err
 
 
-@pytest.mark.parametrize("estado", [401, 403, 404])
-def test_error_http_se_traduce_sin_reintentos_de_permiso(
-    escenario: Escenario,
-    estado: int,
+@pytest.mark.parametrize("state", [401, 403, 404])
+def test_error_http_translates_without_retries_of_permission(
+    scenario: Scenario,
+    state: int,
 ) -> None:
-    escenario.api.estado_lectura = estado
-    assert entrada.main(escenario.argumentos()) == 4
-    assert escenario.api.consultas == 1
-    assert not escenario.api.lotes
+    scenario.api.state_read = state
+    assert input.main(scenario.arguments()) == 4
+    assert scenario.api.queries == 1
+    assert not scenario.api.batches
 
 
-def test_cache_invalida_se_repara_solo_con_opcion_explicita(escenario: Escenario) -> None:
-    configuracion = escenario.configuracion
-    configuracion.catalogo_path.parent.mkdir(parents=True)
-    configuracion.catalogo_path.write_bytes(b"{invalido")
-    assert entrada.main(escenario.argumentos()) == 2
-    assert entrada.main(escenario.argumentos("--reconstruir-catalogo")) == 0
-    assert configuracion.catalogo_path.read_bytes() == b"{invalido"
-    assert entrada.main(escenario.argumentos("--reconstruir-catalogo", "--aplicar")) == 0
-    assert AlmacenCatalogoJson(configuracion.catalogo_path).leer() is not None
+def test_cache_invalid_repairs_only_with_option_explicit(scenario: Scenario) -> None:
+    configuration = scenario.configuration
+    configuration.catalog_path.parent.mkdir(parents=True)
+    configuration.catalog_path.write_bytes(b"{invalido")
+    assert input.main(scenario.arguments()) == 2
+    assert input.main(scenario.arguments("--rebuild-catalog")) == 0
+    assert configuration.catalog_path.read_bytes() == b"{invalido"
+    assert input.main(scenario.arguments("--rebuild-catalog", "--apply")) == 0
+    assert JsonCatalogStore(configuration.catalog_path).read() is not None
 
 
-def test_autorizacion_comando_guarda_token_sin_ejecutar_sheets(
-    escenario: Escenario,
+def test_authorization_command_saves_token_without_run_sheets(
+    scenario: Scenario,
     mocker: MockerFixture,
 ) -> None:
-    configuracion = escenario.configuracion
-    guardar_json(
-        configuracion.credentials_path,
+    configuration = scenario.configuration
+    save_json(
+        configuration.credentials_path,
         {
             "installed": {
                 "auth_uri": "https://accounts.google.com/o/oauth2/v2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "cliente_ficticio",
-                "client_secret": "secreto_ficticio",
+                "client_id": "client_fake",
+                "client_secret": "secret_fake",
                 "redirect_uris": ["http://localhost"],
             }
         },
     )
-    fabricar = cast(
+    make = cast(
         Callable[[Mapping[str, object]], Credentials], Credentials.from_authorized_user_info
     )
-    credenciales = fabricar(
-        objeto(json.loads(configuracion.token_path.read_text(encoding="utf-8")))
+    credentials = make(
+        require_object(json.loads(configuration.token_path.read_text(encoding="utf-8")))
     )
-    flujo = mocker.Mock()
-    flujo.run_local_server.return_value = credenciales
-    mocker.patch.object(InstalledAppFlow, "from_client_config", return_value=flujo)
+    flow = mocker.Mock()
+    flow.run_local_server.return_value = credentials
+    mocker.patch.object(InstalledAppFlow, "from_client_config", return_value=flow)
     assert (
-        entrada.main(
+        input.main(
             [
-                "--sin-env",
-                "--directorio-base",
-                str(configuracion.directorio_base),
-                "--autorizar-google",
+                "--no-env",
+                "--base-directory",
+                str(configuration.base_directory),
+                "--authorize-google",
             ]
         )
         == 0
     )
-    flujo.run_local_server.assert_called_once()
-    flujo.oauth2session.close.assert_called_once()
-    assert escenario.api.consultas == 0
-    assert not escenario.api.lotes
-    assert not configuracion.resolucion_path.exists()
+    flow.run_local_server.assert_called_once()
+    flow.oauth2session.close.assert_called_once()
+    assert scenario.api.queries == 0
+    assert not scenario.api.batches
+    assert not configuration.resolution_path.exists()
 
 
-def test_fallo_al_construir_escritor_cierra_lector_previo(
-    escenario: Escenario,
+def test_failure_on_build_writer_closes_reader_previous(
+    scenario: Scenario,
     mocker: MockerFixture,
 ) -> None:
-    cierre = mocker.spy(LectorClientesSheets, "cerrar")
-    mocker.patch.object(entrada, "crear_escritor_sheets", side_effect=AutorizacionError("ficticio"))
-    assert entrada.main(escenario.argumentos("--aplicar")) == 4
-    cierre.assert_called_once()
-    assert escenario.api.consultas == 0
-    assert not escenario.api.lotes
+    closure = mocker.spy(SheetsClientReader, "close")
+    mocker.patch.object(input, "create_writer_sheets", side_effect=AuthorizationError("fake"))
+    assert input.main(scenario.arguments("--apply")) == 4
+    closure.assert_called_once()
+    assert scenario.api.queries == 0
+    assert not scenario.api.batches
 
 
-def test_autorizacion_interactiva_no_aplica_a_cuenta_servicio(
-    escenario: Escenario,
+def test_authorization_interactive_no_applies_to_account_service(
+    scenario: Scenario,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("AC_GOOGLE_TIPO_AUTENTICACION", "cuenta_servicio")
-    original = archivos(escenario.configuracion.directorio_base)
+    monkeypatch.setenv("CA_GOOGLE_AUTHENTICATION_TYPE", "service_account")
+    original = files(scenario.configuration.base_directory)
     assert (
-        entrada.main(
+        input.main(
             [
-                "--sin-env",
-                "--directorio-base",
-                str(escenario.configuracion.directorio_base),
-                "--autorizar-google",
+                "--no-env",
+                "--base-directory",
+                str(scenario.configuration.base_directory),
+                "--authorize-google",
             ]
         )
         == 2
     )
-    assert archivos(escenario.configuracion.directorio_base) == original
-    assert escenario.api.consultas == 0
+    assert files(scenario.configuration.base_directory) == original
+    assert scenario.api.queries == 0

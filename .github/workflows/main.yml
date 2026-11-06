@@ -1,4 +1,4 @@
-name: Calidad y tests
+name: Quality and tests
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verificar:
+  verify:
     name: Python ${{ matrix.python }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -26,33 +26,33 @@ jobs:
       POETRY_NO_INTERACTION: "1"
       POETRY_VIRTUALENVS_IN_PROJECT: "true"
     steps:
-      - name: Obtener código
+      - name: Check out source code
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Configurar Python
+      - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      - name: Instalar Poetry
+      - name: Install Poetry
         run: python -m pip install "poetry==2.3.1"
-      - name: Verificar configuración y lock
+      - name: Validate configuration and lock file
         run: poetry check --lock
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: poetry sync --with dev
-      - name: Revisar todo el proyecto
+      - name: Check all source and tests
         run: >
           poetry run ruff check src typings tests
-      - name: Verificar formato de todo el proyecto
+      - name: Check project formatting
         run: >
           poetry run ruff format --check src typings tests
-      - name: Verificar tipos de todo el proyecto
+      - name: Check types across the project
         run: poetry run mypy
-      - name: Ejecutar tests nuevos y de regresión
+      - name: Run unit and regression tests
         run: >
           poetry run pytest
-          --cov=automatizacion_clientes
+          --cov=client_automation
           --cov-report=term-missing
           --cov-report=xml
-      - name: Construir distribución
+      - name: Build distributions
         run: poetry build

@@ -1,5 +1,0 @@
-02/11/2026, 09:00 - Los mensajes están cifrados de extremo a extremo.
-02/11/2026, 09:01 - Axa Prueba: Mensaje ficticio de ejemplo.
-05/11/2026, 10:30 - Mi Nombre: Respuesta ficticia de ejemplo.
-Esta es una continuación del mismo mensaje.
-10/11/2026, 11:00 - Axa Prueba: Mensaje posterior al período del ejemplo.

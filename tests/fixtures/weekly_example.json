@@ -1,0 +1,15 @@
+{
+  "period": {"start_date": "2026-07-20", "end_date": "2026-07-24"},
+  "extracted_at": "2026-07-24T18:00:00-03:00",
+  "total_chats_scanned": 8,
+  "contacts": [
+    {"raw_name": "Bufugi Famagu (IOL)", "last_activity_date": "2026-07-21", "phone": null, "is_group": false},
+    {"raw_name": "Rogoza Rolini (Inviu)", "last_activity_date": "2026-07-22", "phone": null, "is_group": false},
+    {"raw_name": "Virute Nipiri (Balanz)", "last_activity_date": "2026-07-22", "phone": null, "is_group": false},
+    {"raw_name": "Funaxo Ridame Dubipu (IOL)", "last_activity_date": "2026-07-23", "phone": null, "is_group": false},
+    {"raw_name": "Lasise Kukeve (IOL/Bull)", "last_activity_date": "2026-07-23", "phone": null, "is_group": false},
+    {"raw_name": "Pinafi Lodotu (Bull)", "last_activity_date": "2026-07-24", "phone": null, "is_group": false},
+    {"raw_name": "Entirely New Client (IOL)", "last_activity_date": "2026-07-24", "phone": null, "is_group": false},
+    {"raw_name": "Famagu Family Group", "last_activity_date": "2026-07-20", "phone": null, "is_group": true}
+  ]
+}

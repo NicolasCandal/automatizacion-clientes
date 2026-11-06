@@ -1,36 +1,36 @@
-# Automatización de clientes
+# Client Automation
 
-Importa actividad semanal desde archivos TXT exportados de WhatsApp, identifica
-clientes contra un libro Excel o Google Sheets y prepara o aplica sus marcas
-semanales. La versión 0.3 concentra toda la implementación en `src/`.
+Import weekly activity from exported WhatsApp TXT files, match contacts against
+an Excel workbook or Google Sheets document, and preview or apply weekly client
+marks.
 
-La importación guarda identidad, teléfono declarado, última fecha de actividad y
-condición de grupo. No extrae información comercial del cuerpo de los mensajes.
-Importar los chats y registrar las marcas son operaciones separadas.
+The import stores declared identity, optional phone number, the last activity
+date, and group status. It does not extract commercial information from message
+bodies. Chat import and spreadsheet registration are separate operations.
 
-El proyecto se distribuye sin datos de clientes ni credenciales. Los tests y
-ejemplos contienen únicamente datos sintéticos. Los archivos personales de
-entrada, estado y respaldo están excluidos de Git y de las distribuciones.
+No real client records or credentials are distributed. Tests and examples use
+synthetic identities. Local inputs, state, backups, configuration, and credentials
+are excluded from Git and distribution archives.
 
-## Estructura
+## Project structure
 
 ```text
 .
 ├── pyproject.toml
 ├── poetry.lock
 ├── .env.example
+├── .gitignore
 ├── .pre-commit-config.yaml
 ├── .github/workflows/main.yml
 ├── README.md
 ├── docs/
-│   ├── arquitectura.md
-│   └── migracion.md
+│   └── architecture.md
 ├── examples/whatsapp/
-│   ├── manifiesto.json
-│   ├── contacto_demo.txt
-│   └── grupo_demo.txt
+│   ├── manifest.json
+│   ├── contact_demo.txt
+│   └── group_demo.txt
 ├── src/
-│   ├── automatizacion_clientes/
+│   ├── client_automation/
 │   │   ├── __init__.py
 │   │   ├── __main__.py
 │   │   ├── config.py
@@ -39,188 +39,181 @@ entrada, estado y respaldo están excluidos de Git y de las distribuciones.
 │   │   ├── infra/
 │   │   ├── services/
 │   │   └── utils/
-│   ├── indice/          # Fachadas de compatibilidad
-│   ├── matching/        # Fachadas de compatibilidad
-│   └── repositorio/     # Fachadas de compatibilidad
+│   ├── catalog_index/
+│   ├── matching/
+│   └── repository/
 ├── typings/
 └── tests/
+    ├── fixtures/
     ├── unit/
     └── integration/
 ```
 
-Las carpetas de entrada, estado, salida y respaldos se configuran; no forman
-parte del paquete. [Arquitectura y garantías](docs/arquitectura.md) describe los
-contratos, validaciones, reintentos y límites de cada adaptador.
+Input, state, output, and backup directories are configurable and are not included
+in the package. [Architecture and guarantees](docs/architecture.md) describes the
+contracts, validation rules, retry behavior, and adapter limitations.
+The collection-based facades delegate to the main implementation.
 
-## Instalación
+## Installation
 
-Requiere Python 3.12, 3.13 o 3.14 y Poetry. La CI fija Poetry 2.3.1.
+Use Python 3.12, 3.13, or 3.14 and Poetry. CI pins Poetry 2.3.1.
 
 ```console
 poetry sync --with dev
-poetry run automatizacion-clientes --help
+poetry run client-automation --help
 ```
 
-Copiar `.env.example` a `.env` y ajustar únicamente los valores propios.
-Todas las variables tienen prefijo `AC_`; la configuración se valida mediante
-Pydantic Settings. No se carga ningún archivo de entorno al importar módulos.
+Copy `.env.example` to `.env` and set your own configuration.
+Pydantic Settings validates all `CA_` environment variables. Importing a module
+does not load a dotenv file or perform application operations.
 
-Las rutas relativas se resuelven desde `AC_DIRECTORIO_BASE`. Cambiar
-`AC_DIRECTORIO_DATOS` no modifica las otras rutas explícitas del ejemplo.
-Mantener estados y respaldos separados para cada libro o documento.
+Relative paths resolve against `CA_BASE_DIRECTORY`.
+Changing `CA_DATA_DIRECTORY` does not change the other explicit paths.
+Keep separate state and backups for every workbook or document.
 
-El modo predeterminado es simulación. `--simular` y `--aplicar` prevalecen sobre
-`AC_SIMULACION`. Una simulación no guarda archivos de la aplicación ni cambia
-marcas; en Sheets puede leer la API y renovar credenciales en memoria.
+Dry run is the default. `--dry-run` and `--apply` override `CA_DRY_RUN`.
+Dry runs do not save application files or change marks. Sheets dry runs may query
+the API and refresh credentials in memory without persisting the refreshed token.
 
-## 1. Preparar los chats exportados
+## 1. Prepare exported chats
 
-Exportar cada conversación como TXT UTF-8 y declarar sus identidades en un
-manifiesto. El ejemplo ficticio de [examples/whatsapp](examples/whatsapp)
-muestra los campos exactos y los formatos admitidos.
+Export each conversation as UTF-8 TXT and declare its identity in a manifest.
+[examples/whatsapp](examples/whatsapp) contains a complete synthetic example.
 
-Cada entrada declara su archivo, nombre, teléfono opcional, remitentes válidos
-y si corresponde a un grupo. El orden día/mes es explícito. No se infieren
-identidades a partir del nombre del archivo. Las rutas TXT deben permanecer
-dentro de la carpeta del manifiesto.
+Each entry declares its file, raw name, optional phone number, exact sender
+labels, and group status. Date order is explicit. Identities are never inferred
+from filenames. TXT paths must remain inside the manifest directory.
 
-El período es inclusivo. Se toma la última actividad dentro de esas fechas,
-aunque el chat también contenga mensajes posteriores. Un chat sin actividad en
-el período no produce un contacto; una semana vacía es válida.
+The period is inclusive. The import selects the last activity within that
+period, even when later messages exist. A chat without activity in the period
+produces no contact. An empty week is valid.
 
 ```console
-poetry run automatizacion-clientes --importar-whatsapp --desde 2026-11-02 --hasta 2026-11-06 --manifiesto datos/entrada/whatsapp/manifiesto.json --simular
+poetry run client-automation --import-whatsapp --start-date 2026-11-02 --end-date 2026-11-06 --manifest data/input/whatsapp/manifest.json --dry-run
 ```
 
-Después de revisar el lote, guardar la entrada semanal:
+After reviewing the batch, save the weekly input:
 
 ```console
-poetry run automatizacion-clientes --importar-whatsapp --desde 2026-11-02 --hasta 2026-11-06 --manifiesto datos/entrada/whatsapp/manifiesto.json --aplicar
+poetry run client-automation --import-whatsapp --start-date 2026-11-02 --end-date 2026-11-06 --manifest data/input/whatsapp/manifest.json --apply
 ```
 
-Esta operación escribe solamente `AC_CONTACTOS_PATH`. No abre el libro,
-no autoriza Google y no registra marcas. Se valida el lote completo antes de
-guardar; los mensajes completos no se incluyen en la salida semanal.
+Import writes only `CA_CONTACTS_PATH`. It does not open the workbook, authorize
+Google, or register marks. The full batch is validated before saving.
+Message bodies are not retained in weekly output.
 
-## 2. Configurar el destino
+## 2. Configure the destination
 
 ### Excel
 
-Usar `AC_REPOSITORIO=excel` y configurar `AC_EXCEL_PATH`.
-El libro debe contener `Inviu`, `IOL`, `Bull`, `Balanz` y `PPI`.
-A1 identifica la columna de clientes, los nombres empiezan en A3 y los
-encabezados semanales están en la fila 2. Las semanas comienzan en C, salvo
-Balanz, donde comienzan en D.
+Set `CA_REPOSITORY=excel` and configure `CA_EXCEL_PATH`.
+The workbook must contain `Inviu`, `IOL`, `Bull`, `Balanz`, and `PPI`.
+A1 identifies the client column. Client names start in A3 and weekly headers
+occupy row 2. Weekly columns start in C, except Balanz, which starts in D.
 
-Se reconocen marcas verdes RGB `118,146,60` o una `x` literal. Al aplicar,
-los seleccionados quedan verdes y los demás blancos en la columna indicada.
-Se rechazan estructuras o características cuya conservación no está soportada;
-consultar las restricciones del adaptador antes de usar un libro operativo.
+The client column accepts Client, Clients, or Name headers, including supported
+localized variants.
+
+A green RGB `118,146,60` fill or literal `x` counts as a mark. Applying changes
+makes selected client cells green and other client cells white in the chosen
+weekly column. Unsupported structures are rejected; review adapter restrictions
+before using an operational workbook.
 
 ### Google Sheets
 
-Usar `AC_REPOSITORIO=sheets`, `AC_SPREADSHEET_ID` y credenciales propias.
-El documento utiliza las mismas cinco hojas y convenciones que Excel.
+Set `CA_REPOSITORY=sheets`, `CA_SPREADSHEET_ID`, and your credential paths.
+The document follows the same five-sheet structure as Excel.
 
-Para OAuth inicial, ejecutar la autorización como operación independiente:
-
-```console
-poetry run automatizacion-clientes --autorizar-google
-```
-
-La operación abre el navegador y guarda el token. Los demás comandos no inician
-consentimiento automáticamente ni borran tokens ante un fallo.
-La configuración inicial solicita solo lectura; para aplicar se debe configurar
-`AC_GOOGLE_ALCANCES=["https://www.googleapis.com/auth/spreadsheets"]` y disponer
-de consentimiento y permisos efectivos de escritura.
-
-También se admite `AC_GOOGLE_TIPO_AUTENTICACION=cuenta_servicio`; en ese caso
-se usan las credenciales de esa cuenta y sus permisos sobre el documento,
-sin el comando de consentimiento OAuth.
-
-Guardar credenciales y tokens fuera del código, en las rutas configuradas de
-`secretos/`. La aplicación no cifra esos JSON.
-
-## 3. Resolver y registrar la semana
-
-El registro lee `AC_CONTACTOS_PATH`, construye o actualiza el catálogo del
-destino, resuelve coincidencias y prepara el reemplazo de marcas.
+Initial OAuth consent is a separate operation:
 
 ```console
-poetry run automatizacion-clientes --encabezado "2026-11-02 al 2026-11-06" --simular
+poetry run client-automation --authorize-google
 ```
 
-El encabezado es una etiqueta opaca: usar el texto exacto de una semana existente
-o una etiqueta nueva que incluya el año. No se interpreta como una fecha.
+This opens a browser and saves the token. Other commands never start consent
+automatically or delete a token after an authentication failure.
+The default scope permits reading only. Applying changes requires
+`CA_GOOGLE_SCOPES=["https://www.googleapis.com/auth/spreadsheets"]`,
+appropriate consent, and effective document permissions.
 
-Los contactos pendientes bloquean las marcas por defecto. Con `--aplicar`
-se guarda el informe para revisarlos, sin aprender aliases ni crear un respaldo
-si el plan está bloqueado. `--permitir-pendientes` autoriza explícitamente usar
-solo los resueltos, incluidos los desmarcados que implique ese reemplazo.
+Service accounts are supported through
+`CA_GOOGLE_AUTHENTICATION_TYPE=service_account`; they use their own credentials
+and document permissions without interactive OAuth consent.
+
+Keep credentials and tokens outside source code in the configured `secrets/`
+paths. Their JSON files are not encrypted by the application.
+
+## 3. Resolve and register a week
+
+Registration reads `CA_CONTACTS_PATH`, builds or refreshes the source catalog,
+resolves contacts, and plans the weekly mark replacement.
 
 ```console
-poetry run automatizacion-clientes --encabezado "2026-11-02 al 2026-11-06" --aplicar
+poetry run client-automation --week-header "2026-11-02 to 2026-11-06" --dry-run
 ```
 
-Cuando hay cambios, el flujo crea respaldo, comprueba revisiones y verifica
-el resultado. En Excel el respaldo conserva los bytes originales. En Sheets
-es un JSON local de los campos consultados de las cinco hojas, sin otras hojas,
-permisos ni historial; no es una copia integral de Drive.
+Headers are opaque labels. Use the exact text of an existing week or a new
+label that includes its year. The application does not interpret header dates.
 
-Se requiere un único escritor por origen y estado. No hay transacción conjunta
-entre archivos auxiliares y planilla ni entre hojas, ni restauración automática.
-Una operación interrumpida puede haber aplicado parte de las marcas.
-Una simulación no garantiza la compatibilidad de todas las características
-que valida el escritor al aplicar.
+Pending contacts block registration by default. Applying a blocked plan saves
+the catalog and report for review, without learning aliases or creating a
+backup. `--allow-pending` explicitly permits replacement using resolved contacts
+only, including any unmarking implied by that replacement.
 
-## Opciones y resultados
+```console
+poetry run client-automation --week-header "2026-11-02 to 2026-11-06" --apply
+```
 
-`--env-file RUTA` elige un archivo de configuración; `--sin-env` evita cargarlo.
-`--directorio-base RUTA` sustituye la base de rutas.
-`--reconstruir-catalogo` reconstruye una caché inválida desde el origen; no
-recupera IDs presentes únicamente en la caché perdida.
+When changes exist, the workflow creates a backup, checks source revisions, and
+verifies the result. Excel backups retain the original bytes exactly.
+Sheets backups are local JSON snapshots of the queried fields of the five
+required sheets. They exclude other sheets, permissions, and history.
 
-| Código | Resultado |
+Use one writer per source and state directory. There is no transaction spanning
+auxiliary files and spreadsheets, nor across sheets. Automatic restoration is
+not implemented. Interrupted operations may have applied some marks.
+A dry run does not guarantee support for every destination feature checked by
+the writer during application.
+
+## Options and exit codes
+
+`--env-file PATH` selects a configuration file; `--no-env` disables dotenv loading.
+`--base-directory PATH` overrides the path base.
+`--rebuild-catalog` rebuilds an invalid cache from the source; IDs that exist
+only in a lost cache cannot be recovered.
+
+| Code | Meaning |
 | --- | --- |
-| 0 | Operación completada o ayuda |
-| 1 | Fallo inesperado |
-| 2 | Argumentos, configuración o dominio inválidos |
-| 3 | Plan bloqueado por pendientes |
-| 4 | Error de infraestructura |
-| 5 | Cambio concurrente del origen o estado |
-| 6 | Registro interrumpido |
-| 130 | Interrupción del usuario |
+| 0 | Completed operation or help |
+| 1 | Unexpected failure |
+| 2 | Invalid arguments, configuration, or domain input |
+| 3 | Registration blocked by pending contacts |
+| 4 | Infrastructure, authentication, or permission failure |
+| 5 | Concurrent source or state modification |
+| 6 | Interrupted registration |
+| 130 | User interruption |
 
-Los diagnósticos usan logging con nivel, fecha y contexto; no se utiliza
-`print()` en el código de la aplicación.
+Diagnostics use standard logging with timestamps, levels, and context.
+Application code does not call `print()`.
 
-## Desarrollo y verificación
+## Development
 
 ```console
 poetry check --lock
 poetry run ruff check src typings tests
 poetry run ruff format --check src typings tests
 poetry run mypy
-poetry run pytest --cov=automatizacion_clientes --cov-report=term-missing
+poetry run pytest --cov=client_automation --cov-report=term-missing
 poetry build
 ```
 
-Ruff y mypy estricto incluyen todos los paquetes y tests. Los hooks de pre-commit
-ejecutan las mismas comprobaciones de estilo y tipos. GitHub Actions configura
-tests y construcción en Windows/Linux con Python 3.12, 3.13 y 3.14; no publica
-ni despliega automáticamente.
+Strict mypy and Ruff include every package and test. Local pre-commit hooks run
+the same formatting and type checks. GitHub Actions runs tests and builds on
+Windows/Linux with Python 3.12, 3.13, and 3.14. It does not deploy, publish, or
+run the automation against live client data.
 
-Las pruebas usan datos ficticios, libros temporales y HTTP simulado. Antes del
-uso operativo falta aceptar el flujo con una exportación propia y una copia del
-destino. Las pruebas locales no acreditan OAuth real ni ejecución remota de CI.
+Tests use synthetic identities, temporary workbooks, and mocked HTTP.
+Unicode and locale-specific input fixtures exercise international exports.
+Before operational use, validate the workflow with your own chat export and a
+copy of the destination. Local tests do not verify live OAuth consent or remote CI.
 
-## Migración desde los módulos anteriores
-
-La versión 0.3 retira los comandos `python -m indice`, `python -m matching` y
-`python -m repositorio`: muestran la guía de migración y devuelven 2, sin
-ejecutar operaciones. Sus paquetes conservan fachadas tipadas para parte de la
-API anterior; las escrituras requieren una revisión explícita.
-
-Revisar [Migración a 0.3](docs/migracion.md) antes de actualizar tareas externas,
-configuración, catálogos o aliases anteriores. La refactorización no convierte
-automáticamente el estado real existente.

@@ -1,0 +1,5 @@
+02/11/2026, 09:00 - Messages are end-to-end encrypted.
+02/11/2026, 09:01 - Axa Sample: Synthetic example message.
+05/11/2026, 10:30 - My Name: Synthetic example reply.
+This is a continuation of the same message.
+10/11/2026, 11:00 - Axa Sample: Message after the example period.

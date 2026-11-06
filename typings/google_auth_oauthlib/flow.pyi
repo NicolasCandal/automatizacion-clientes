@@ -1,4 +1,4 @@
-"""Superficie pública usada de InstalledAppFlow, contrastada con su implementación."""
+"""Used InstalledAppFlow API, checked against its implementation."""
 
 from collections.abc import Mapping, Sequence
 

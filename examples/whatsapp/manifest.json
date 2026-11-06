@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date_order": "day_month",
+  "short_year_century": 2000,
+  "chats": [
+    {
+      "file": "contact_demo.txt",
+      "raw_name": "Axa Sample (IOL)",
+      "phone": null,
+      "is_group": false,
+      "senders": [
+        "My Name",
+        "Axa Sample"
+      ]
+    },
+    {
+      "file": "group_demo.txt",
+      "raw_name": "Example Team",
+      "phone": null,
+      "is_group": true,
+      "senders": [
+        "My Name",
+        "Other Person"
+      ]
+    }
+  ]
+}

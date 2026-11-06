@@ -4,131 +4,131 @@ import pytest
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from repositorio.repo_xlsx import RepoXlsx
-from repositorio.tipos import ErrorEstructura
+from repository.repo_xlsx import RepoXlsx
+from repository.types import StructureError
 
-HOJAS = ["Inviu", "IOL", "Bull", "Balanz", "PPI"]
+SHEETS = ["Inviu", "IOL", "Bull", "Balanz", "PPI"]
 
 
-def _armar_excel_fixture(tmp_path: Path) -> Path:
+def _build_excel_fixture(tmp_path: Path) -> Path:
     wb = Workbook()
-    inicial = wb.active
-    assert isinstance(inicial, Worksheet)
-    wb.remove(inicial)
+    initial = wb.active
+    assert isinstance(initial, Worksheet)
+    wb.remove(initial)
 
-    for nombre_hoja in ["Inviu", "IOL", "Bull", "PPI"]:
-        ws = wb.create_sheet(nombre_hoja)
-        ws.cell(row=1, column=1, value="Cliente")
+    for sheet_name in ["Inviu", "IOL", "Bull", "PPI"]:
+        ws = wb.create_sheet(sheet_name)
+        ws.cell(row=1, column=1, value="Client")
         ws.cell(row=1, column=2, value="Capital")
-        ws.cell(row=2, column=3, value="15 al 19-12")
-        for i, nombre in enumerate(["Sivivu, Mizote", "Kukeve, Radono", "Gibelo, Fexira"]):
-            fila = 3 + i
-            ws.cell(row=fila, column=1, value=nombre)
-            ws.cell(row=fila, column=2, value=1000 * (i + 1))
+        ws.cell(row=2, column=3, value="15 on 19-12")
+        for i, name in enumerate(["Sivivu, Mizote", "Kukeve, Radono", "Gibelo, Fexira"]):
+            row = 3 + i
+            ws.cell(row=row, column=1, value=name)
+            ws.cell(row=row, column=2, value=1000 * (i + 1))
 
     ws = wb.create_sheet("Balanz")
-    ws.cell(row=1, column=1, value="CLIENTES")
-    ws.cell(row=2, column=4, value="15 al 19-12")
+    ws.cell(row=1, column=1, value="CLIENTS")
+    ws.cell(row=2, column=4, value="15 on 19-12")
     ws.cell(row=3, column=1, value="Voledi, Axa")
 
-    ruta = tmp_path / "fixture.xlsx"
-    wb.save(ruta)
-    return ruta
+    path = tmp_path / "fixture.xlsx"
+    wb.save(path)
+    return path
 
 
-def test_listar_hojas(tmp_path: Path) -> None:
-    repo = RepoXlsx(_armar_excel_fixture(tmp_path))
-    hojas = {h.nombre: h for h in repo.listar_hojas()}
-    assert set(hojas) == set(HOJAS)
-    assert hojas["IOL"].primera_col_semana == 3
-    assert hojas["IOL"].ultima_col_semana == 3
-    assert hojas["IOL"].ultima_fila_con_cliente == 5
-    assert hojas["Balanz"].primera_col_semana == 4
-    assert hojas["Balanz"].ultima_fila_con_cliente == 3
+def test_list_sheets(tmp_path: Path) -> None:
+    repo = RepoXlsx(_build_excel_fixture(tmp_path))
+    sheets = {h.name: h for h in repo.list_sheets()}
+    assert set(sheets) == set(SHEETS)
+    assert sheets["IOL"].first_week_column == 3
+    assert sheets["IOL"].last_week_column == 3
+    assert sheets["IOL"].last_client_row == 5
+    assert sheets["Balanz"].first_week_column == 4
+    assert sheets["Balanz"].last_client_row == 3
 
 
-def test_leer_clientes(tmp_path: Path) -> None:
-    repo = RepoXlsx(_armar_excel_fixture(tmp_path))
-    clientes = repo.leer_clientes("IOL")
-    assert [c.nombre_crudo for c in clientes] == [
+def test_read_clients(tmp_path: Path) -> None:
+    repo = RepoXlsx(_build_excel_fixture(tmp_path))
+    clients = repo.read_clients("IOL")
+    assert [c.raw_name for c in clients] == [
         "Sivivu, Mizote",
         "Kukeve, Radono",
         "Gibelo, Fexira",
     ]
 
 
-def test_falta_hoja_lanza_error(tmp_path: Path) -> None:
+def test_missing_sheet_raises_error(tmp_path: Path) -> None:
     wb = Workbook()
-    inicial = wb.active
-    assert isinstance(inicial, Worksheet)
-    wb.remove(inicial)
-    for nombre_hoja in ["Inviu", "IOL", "Bull", "Balanz"]:  # falta PPI
-        ws = wb.create_sheet(nombre_hoja)
-        ws.cell(row=1, column=1, value="Cliente")
-    ruta = tmp_path / "incompleto.xlsx"
-    wb.save(ruta)
+    initial = wb.active
+    assert isinstance(initial, Worksheet)
+    wb.remove(initial)
+    for sheet_name in ["Inviu", "IOL", "Bull", "Balanz"]:  # PPI is intentionally missing.
+        ws = wb.create_sheet(sheet_name)
+        ws.cell(row=1, column=1, value="Client")
+    path = tmp_path / "incomplete.xlsx"
+    wb.save(path)
 
-    with pytest.raises(ErrorEstructura):
-        RepoXlsx(ruta).listar_hojas()
+    with pytest.raises(StructureError):
+        RepoXlsx(path).list_sheets()
 
 
-def test_aplicar_marcas_pinta_verde_y_blanco(tmp_path: Path) -> None:
-    ruta = _armar_excel_fixture(tmp_path)
-    repo = RepoXlsx(ruta)
+def test_apply_marks_paints_green_and_white(tmp_path: Path) -> None:
+    path = _build_excel_fixture(tmp_path)
+    repo = RepoXlsx(path)
 
-    repo.aplicar_marcas(
-        "IOL", col=4, encabezado="22 al 26-12", filas={3, 5}, revision_esperada=repo.revision()
+    repo.apply_marks(
+        "IOL", col=4, header="22 on 26-12", rows={3, 5}, expected_revision=repo.revision()
     )
 
-    marcadas = repo.leer_marcas("IOL", col=4)
-    assert marcadas == {3, 5}
+    marked = repo.read_marks("IOL", col=4)
+    assert marked == {3, 5}
 
-    col, encabezado = repo.ultima_semana("IOL")
+    col, header = repo.last_week("IOL")
     assert col == 4
-    assert encabezado == "22 al 26-12"
+    assert header == "22 on 26-12"
 
 
-def test_aplicar_marcas_es_idempotente(tmp_path: Path) -> None:
-    ruta = _armar_excel_fixture(tmp_path)
-    repo = RepoXlsx(ruta)
+def test_apply_marks_is_idempotent(tmp_path: Path) -> None:
+    path = _build_excel_fixture(tmp_path)
+    repo = RepoXlsx(path)
 
-    repo.aplicar_marcas(
-        "IOL", col=4, encabezado="22 al 26-12", filas={3}, revision_esperada=repo.revision()
+    repo.apply_marks(
+        "IOL", col=4, header="22 on 26-12", rows={3}, expected_revision=repo.revision()
     )
-    repo.aplicar_marcas(
-        "IOL", col=4, encabezado="22 al 26-12", filas={3, 4}, revision_esperada=repo.revision()
+    repo.apply_marks(
+        "IOL", col=4, header="22 on 26-12", rows={3, 4}, expected_revision=repo.revision()
     )
-    repo.aplicar_marcas(
-        "IOL", col=4, encabezado="22 al 26-12", filas={3, 4}, revision_esperada=repo.revision()
+    repo.apply_marks(
+        "IOL", col=4, header="22 on 26-12", rows={3, 4}, expected_revision=repo.revision()
     )
 
-    hojas = {h.nombre: h for h in repo.listar_hojas()}
-    # Solo debe existir UNA columna nueva (la 4), no una por cada corrida.
-    assert hojas["IOL"].ultima_col_semana == 4
-    assert repo.leer_marcas("IOL", col=4) == {3, 4}
+    sheets = {h.name: h for h in repo.list_sheets()}
+    # Repeated runs must create only one new column, not one per invocation.
+    assert sheets["IOL"].last_week_column == 4
+    assert repo.read_marks("IOL", col=4) == {3, 4}
 
 
-def test_crear_respaldo_no_modifica_original(tmp_path: Path) -> None:
-    ruta = _armar_excel_fixture(tmp_path)
-    repo = RepoXlsx(ruta)
-    original = ruta.read_bytes()
+def test_create_backup_no_modifies_original(tmp_path: Path) -> None:
+    path = _build_excel_fixture(tmp_path)
+    repo = RepoXlsx(path)
+    original = path.read_bytes()
 
-    ruta_respaldo = repo.crear_respaldo()
+    path_backup = repo.create_backup()
 
-    assert ruta.read_bytes() == original
+    assert path.read_bytes() == original
     from pathlib import Path
 
-    assert Path(ruta_respaldo).exists()
-    assert Path(ruta_respaldo).read_bytes() == original
+    assert Path(path_backup).exists()
+    assert Path(path_backup).read_bytes() == original
 
 
-def test_revision_cambia_al_escribir(tmp_path: Path) -> None:
-    ruta = _armar_excel_fixture(tmp_path)
-    repo = RepoXlsx(ruta)
-    antes = repo.revision()
+def test_revision_changes_on_write(tmp_path: Path) -> None:
+    path = _build_excel_fixture(tmp_path)
+    repo = RepoXlsx(path)
+    before = repo.revision()
 
-    repo.aplicar_marcas(
-        "IOL", col=4, encabezado="22 al 26-12", filas={3}, revision_esperada=repo.revision()
+    repo.apply_marks(
+        "IOL", col=4, header="22 on 26-12", rows={3}, expected_revision=repo.revision()
     )
 
-    assert repo.revision() != antes
+    assert repo.revision() != before

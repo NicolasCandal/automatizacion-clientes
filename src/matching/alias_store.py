@@ -1,53 +1,51 @@
-"""Fachada de aliases históricos sobre la persistencia y conciliación actuales."""
+"""Legacy alias facade backed by current persistence and reconciliation."""
 
 from pathlib import Path
 
-from automatizacion_clientes.core.errores import ValidacionError
-from automatizacion_clientes.infra.almacen_aliases_json import AlmacenAliasesJson
-from automatizacion_clientes.infra.formatos_compatibilidad import (
-    AliasHistorico,
-    DestinoHistorico,
-    alias_a_historico,
-    alias_desde_historico,
+from client_automation.core.errors import DomainValidationError
+from client_automation.infra.json_alias_store import JsonAliasStore
+from client_automation.infra.legacy_formats import (
+    LegacyAlias,
+    LegacyDestination,
+    alias_from_legacy,
+    alias_to_legacy,
 )
 
 
 class AliasStore:
-    """Conserva la interfaz de diccionarios sin duplicar estado o reglas de conflicto."""
+    """Preserve dictionary queries without duplicating state or conflict rules."""
 
-    def __init__(self, ruta: str | Path) -> None:
-        """Abre una sesión tipada; un archivo ausente no se crea."""
-        self.ruta = Path(ruta)
-        self.almacen = AlmacenAliasesJson(self.ruta)
+    def __init__(self, path: str | Path) -> None:
+        """Open a typed session without creating a missing file."""
+        self.path = Path(path)
+        self.store = JsonAliasStore(self.path)
 
-    def buscar_por_nombre(self, nombre_crudo: str) -> AliasHistorico | None:
-        """Devuelve una copia de la asociación por nombre exacto."""
-        alias = self.almacen.buscar_por_nombre(nombre_crudo)
-        return None if alias is None else alias_a_historico(alias)
+    def find_by_name(self, raw_name: str) -> LegacyAlias | None:
+        """Return a separate copy of an exact-name association."""
+        alias = self.store.find_by_name(raw_name)
+        return None if alias is None else alias_to_legacy(alias)
 
-    def buscar_por_telefono(self, telefono: str | None) -> tuple[str, AliasHistorico] | None:
-        """Rechaza teléfonos compartidos que la interfaz singular no puede representar."""
-        if not telefono:
+    def find_by_phone(self, phone: str | None) -> tuple[str, LegacyAlias] | None:
+        """Reject shared phone numbers that the singular interface cannot represent."""
+        if not phone:
             return None
-        aliases = self.almacen.buscar_por_telefono(telefono)
+        aliases = self.store.find_by_phone(phone)
         if len(aliases) > 1:
-            raise ValidacionError(
-                "La interfaz anterior no puede elegir entre aliases de un teléfono."
+            raise DomainValidationError(
+                "The singular legacy interface cannot choose between shared-phone aliases."
             )
-        return (aliases[0].nombre_crudo, alias_a_historico(aliases[0])) if aliases else None
+        return (aliases[0].raw_name, alias_to_legacy(aliases[0])) if aliases else None
 
-    def registrar(
-        self, nombre_crudo: str, personas: list[DestinoHistorico], telefono: str | None = None
+    def register(
+        self, raw_name: str, people: list[LegacyDestination], phone: str | None = None
     ) -> str | None:
-        """Delega la conciliación y mantiene los cambios en memoria hasta guardar."""
-        return self.almacen.registrar(
-            alias_desde_historico(nombre_crudo, {"personas": personas, "telefono": telefono})
-        )
+        """Reconcile in memory and defer persistence until save is called."""
+        return self.store.register(alias_from_legacy(raw_name, {"people": people, "phone": phone}))
 
-    def guardar(self) -> None:
-        """Persiste mediante reemplazo atómico y comprobación de cambios externos."""
-        self.almacen.guardar()
+    def save(self) -> None:
+        """Persist with atomic replacement and external-change checks."""
+        self.store.save()
 
     def __len__(self) -> int:
-        """Consulta la cantidad de asociaciones sin leer el archivo."""
-        return len(self.almacen)
+        """Return the association count without reading the file."""
+        return len(self.store)

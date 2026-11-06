@@ -1,4 +1,4 @@
-"""Comando completo sobre entradas sintéticas y directorios temporales."""
+"""Complete CLI workflow with synthetic inputs and temporary directories."""
 
 import subprocess
 import sys
@@ -11,250 +11,244 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from pytest_mock import MockerFixture
 
-from automatizacion_clientes import main as entrada
-from automatizacion_clientes.config import Config
-from automatizacion_clientes.core.errores import PersistenciaError
-from automatizacion_clientes.core.modelos import (
-    CatalogoClientes,
-    ResolucionSemanal,
-    SemanaContactos,
+from client_automation import main as input
+from client_automation.config import Config
+from client_automation.core.errors import PersistenceError
+from client_automation.core.models import (
+    ClientCatalog,
+    WeeklyContacts,
+    WeeklyResolution,
 )
-from automatizacion_clientes.infra.almacen_aliases_json import AlmacenAliasesJson
-from automatizacion_clientes.infra.almacen_catalogo_json import AlmacenCatalogoJson
-from automatizacion_clientes.infra.almacen_resoluciones_json import AlmacenResolucionesJson
-from automatizacion_clientes.infra.almacenamiento_json import guardar_json
-from automatizacion_clientes.infra.lector_clientes_excel import LectorClientesExcel
-from automatizacion_clientes.infra.lector_contactos_json import LectorContactosJson
-from automatizacion_clientes.services.coincidencias import ServicioCoincidencias
+from client_automation.infra.excel_client_reader import ExcelClientReader
+from client_automation.infra.json_alias_store import JsonAliasStore
+from client_automation.infra.json_catalog_store import JsonCatalogStore
+from client_automation.infra.json_contact_reader import JsonContactReader
+from client_automation.infra.json_resolution_store import JsonResolutionStore
+from client_automation.infra.json_storage import save_json
+from client_automation.services.matching import MatchingService
 
 
 @pytest.fixture(autouse=True)
-def aislar_entorno(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    for nombre in tuple(environ):
-        if nombre.upper().startswith("AC_"):
-            monkeypatch.delenv(nombre)
+def isolate_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in tuple(environ):
+        if name.upper().startswith("CA_"):
+            monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture
-def configuracion(tmp_path: Path) -> Config:
-    configuracion = Config(directorio_base=tmp_path, _env_file=None)
-    configuracion.excel_path.parent.mkdir(parents=True)
-    libro = Workbook()
-    inicial = libro.active
-    assert isinstance(inicial, Worksheet)
-    libro.remove(inicial)
-    for nombre in ("Inviu", "IOL", "Bull", "Balanz", "PPI"):
-        hoja: Worksheet = libro.create_sheet(nombre)
-        hoja.cell(1, 1, "Cliente")
-        hoja.cell(2, 4 if nombre == "Balanz" else 3, "Anterior")
-        hoja.cell(3, 1, "Axa Prueba")
-        hoja.cell(5, 1, "Notuka Ejemplo")
-        hoja.cell(3, 2, "=100+200")
-        if nombre == "IOL":
-            hoja.cell(8, 1, "AXA PRUEBA Y/O NOTUKA EJEMPLO")
+def configuration(tmp_path: Path) -> Config:
+    configuration = Config(base_directory=tmp_path, _env_file=None)
+    configuration.excel_path.parent.mkdir(parents=True)
+    workbook = Workbook()
+    initial = workbook.active
+    assert isinstance(initial, Worksheet)
+    workbook.remove(initial)
+    for name in ("Inviu", "IOL", "Bull", "Balanz", "PPI"):
+        sheet: Worksheet = workbook.create_sheet(name)
+        sheet.cell(1, 1, "Client")
+        sheet.cell(2, 4 if name == "Balanz" else 3, "Previous")
+        sheet.cell(3, 1, "Axa Sample")
+        sheet.cell(5, 1, "Notuka Example")
+        sheet.cell(3, 2, "=100+200")
+        if name == "IOL":
+            sheet.cell(8, 1, "AXA SAMPLE AND/OR NOTUKA EXAMPLE")
     try:
-        libro.save(configuracion.excel_path)
+        workbook.save(configuration.excel_path)
     finally:
-        libro.close()
-    escribir_contactos(configuracion, "Axa Prueba (IOL/Balanz)")
-    return configuracion
+        workbook.close()
+    write_contacts(configuration, "Axa Sample (IOL/Balanz)")
+    return configuration
 
 
-def escribir_contactos(configuracion: Config, nombre: str) -> None:
-    guardar_json(
-        configuracion.contactos_path,
+def write_contacts(configuration: Config, name: str) -> None:
+    save_json(
+        configuration.contacts_path,
         {
-            "rango": {"desde": "2026-11-02", "hasta": "2026-11-06"},
-            "contactos": [{"nombre_crudo": nombre, "ultima_fecha": "2026-11-05"}],
+            "period": {"start_date": "2026-11-02", "end_date": "2026-11-06"},
+            "contacts": [{"raw_name": name, "last_activity_date": "2026-11-05"}],
         },
     )
 
 
-def archivos(base: Path) -> dict[Path, bytes]:
-    return {ruta.relative_to(base): ruta.read_bytes() for ruta in base.rglob("*") if ruta.is_file()}
+def files(base: Path) -> dict[Path, bytes]:
+    return {path.relative_to(base): path.read_bytes() for path in base.rglob("*") if path.is_file()}
 
 
-def argumentos(configuracion: Config) -> list[str]:
+def arguments(configuration: Config) -> list[str]:
     return [
-        "--sin-env",
-        "--directorio-base",
-        str(configuracion.directorio_base),
-        "--encabezado",
+        "--no-env",
+        "--base-directory",
+        str(configuration.base_directory),
+        "--week-header",
         "2026-11-02 / 2026-11-06",
     ]
 
 
-def test_simulacion_predeterminada_no_crea_ni_modifica_archivos(
-    configuracion: Config, capsys: pytest.CaptureFixture[str]
+def test_dry_run_default_no_creates_nor_modifies_files(
+    configuration: Config, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    originales = archivos(configuracion.directorio_base)
-    assert entrada.main(argumentos(configuracion)) == 0
-    assert archivos(configuracion.directorio_base) == originales
-    salida = capsys.readouterr()
-    assert salida.out == ""
-    assert "Plan de hoja: IOL; columna=4" in salida.err
-    assert "marcar=2" in salida.err
-    assert "simulación=True" in salida.err
-    assert "Axa Prueba" not in salida.err
-    assert str(configuracion.excel_path) not in salida.err
+    original = files(configuration.base_directory)
+    assert input.main(arguments(configuration)) == 0
+    assert files(configuration.base_directory) == original
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "Sheet plan: IOL; column=4" in output.err
+    assert "mark=2" in output.err
+    assert "dry_run=True" in output.err
+    assert "Axa Sample" not in output.err
+    assert str(configuration.excel_path) not in output.err
 
 
-def test_aplicar_guarda_informe_aliases_respaldo_y_marcas_y_admite_repeticion(
-    configuracion: Config,
+def test_apply_saves_report_aliases_backup_and_marks_and_accepts_repetition(
+    configuration: Config,
 ) -> None:
-    original = configuracion.excel_path.read_bytes()
-    assert entrada.main([*argumentos(configuracion), "--aplicar"]) == 0
-    respaldos = list(configuracion.directorio_respaldos.iterdir())
-    assert len(respaldos) == 1
-    assert respaldos[0].read_bytes() == original
-    assert AlmacenCatalogoJson(configuracion.catalogo_path).leer() is not None
-    assert len(AlmacenResolucionesJson(configuracion.resolucion_path).leer().resueltos) == 1
+    original = configuration.excel_path.read_bytes()
+    assert input.main([*arguments(configuration), "--apply"]) == 0
+    backups = list(configuration.backup_directory.iterdir())
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == original
+    assert JsonCatalogStore(configuration.catalog_path).read() is not None
+    assert len(JsonResolutionStore(configuration.resolution_path).read().resolved) == 1
     assert (
-        AlmacenAliasesJson(configuracion.aliases_path).buscar_por_nombre("Axa Prueba (IOL/Balanz)")
+        JsonAliasStore(configuration.aliases_path).find_by_name("Axa Sample (IOL/Balanz)")
         is not None
     )
-    with LectorClientesExcel(configuracion.excel_path) as lector:
-        assert lector.leer_marcas("IOL", 4) == frozenset({3, 8})
-        assert lector.leer_marcas("Balanz", 5) == frozenset({3})
-        assert lector.leer_marcas("Bull", 4) == frozenset()
-    libro = load_workbook(configuracion.excel_path, data_only=False)
+    with ExcelClientReader(configuration.excel_path) as reader:
+        assert reader.read_marks("IOL", 4) == frozenset({3, 8})
+        assert reader.read_marks("Balanz", 5) == frozenset({3})
+        assert reader.read_marks("Bull", 4) == frozenset()
+    workbook = load_workbook(configuration.excel_path, data_only=False)
     try:
-        hoja = libro["IOL"]
-        assert isinstance(hoja, Worksheet)
-        assert hoja.cell(3, 2).value == "=100+200"
+        sheet = workbook["IOL"]
+        assert isinstance(sheet, Worksheet)
+        assert sheet.cell(3, 2).value == "=100+200"
     finally:
-        libro.close()
-    actual = configuracion.excel_path.read_bytes()
-    assert entrada.main([*argumentos(configuracion), "--aplicar"]) == 0
-    assert configuracion.excel_path.read_bytes() == actual
-    assert len(list(configuracion.directorio_respaldos.iterdir())) == 1
+        workbook.close()
+    current = configuration.excel_path.read_bytes()
+    assert input.main([*arguments(configuration), "--apply"]) == 0
+    assert configuration.excel_path.read_bytes() == current
+    assert len(list(configuration.backup_directory.iterdir())) == 1
 
 
-@pytest.mark.parametrize("aplicar", [False, True])
-def test_pendientes_devuelven_tres_sin_marcas_y_solo_guardan_informe_en_real(
-    configuracion: Config, aplicar: bool
+@pytest.mark.parametrize("apply", [False, True])
+def test_pending_return_three_without_marks_and_only_save_report_in_real(
+    configuration: Config, apply: bool
 ) -> None:
-    escribir_contactos(configuracion, "Identidad inexistente zzz 987")
-    original = configuracion.excel_path.read_bytes()
-    opciones = ["--aplicar"] if aplicar else []
-    assert entrada.main([*argumentos(configuracion), *opciones]) == 3
-    assert configuracion.excel_path.read_bytes() == original
-    assert not configuracion.directorio_respaldos.exists()
-    assert not configuracion.aliases_path.exists()
-    assert configuracion.catalogo_path.exists() is aplicar
-    assert configuracion.resolucion_path.exists() is aplicar
+    write_contacts(configuration, "Unknown identity zzz 987")
+    original = configuration.excel_path.read_bytes()
+    options = ["--apply"] if apply else []
+    assert input.main([*arguments(configuration), *options]) == 3
+    assert configuration.excel_path.read_bytes() == original
+    assert not configuration.backup_directory.exists()
+    assert not configuration.aliases_path.exists()
+    assert configuration.catalog_path.exists() is apply
+    assert configuration.resolution_path.exists() is apply
 
 
-def test_pendientes_se_pueden_incluir_de_forma_explicita(configuracion: Config) -> None:
-    escribir_contactos(configuracion, "Identidad inexistente zzz 987")
-    assert entrada.main([*argumentos(configuracion), "--aplicar", "--permitir-pendientes"]) == 0
-    with LectorClientesExcel(configuracion.excel_path) as lector:
-        assert lector.leer_marcas("IOL", 4) == frozenset()
-    assert not configuracion.aliases_path.exists()
+def test_pending_can_include_of_way_explicit(configuration: Config) -> None:
+    write_contacts(configuration, "Unknown identity zzz 987")
+    assert input.main([*arguments(configuration), "--apply", "--allow-pending"]) == 0
+    with ExcelClientReader(configuration.excel_path) as reader:
+        assert reader.read_marks("IOL", 4) == frozenset()
+    assert not configuration.aliases_path.exists()
 
 
-def test_simular_prevalece_sobre_la_configuracion_real(
-    configuracion: Config, monkeypatch: pytest.MonkeyPatch
+def test_dry_run_overrides_over_the_configuration_real(
+    configuration: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("AC_SIMULACION", "false")
-    originales = archivos(configuracion.directorio_base)
-    assert entrada.main([*argumentos(configuracion), "--simular"]) == 0
-    assert archivos(configuracion.directorio_base) == originales
+    monkeypatch.setenv("CA_DRY_RUN", "false")
+    original = files(configuration.base_directory)
+    assert input.main([*arguments(configuration), "--dry-run"]) == 0
+    assert files(configuration.base_directory) == original
 
 
-def test_modo_real_desde_entorno_se_respeta(
-    configuracion: Config, monkeypatch: pytest.MonkeyPatch
+def test_mode_real_start_date_environment_respects(
+    configuration: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("AC_SIMULACION", "false")
-    assert entrada.main(argumentos(configuracion)) == 0
-    assert configuracion.resolucion_path.exists()
-    assert configuracion.directorio_respaldos.exists()
+    monkeypatch.setenv("CA_DRY_RUN", "false")
+    assert input.main(arguments(configuration)) == 0
+    assert configuration.resolution_path.exists()
+    assert configuration.backup_directory.exists()
 
 
-def test_cache_invalida_solo_se_reconstruye_con_opcion_explicita(configuracion: Config) -> None:
-    configuracion.catalogo_path.parent.mkdir(parents=True)
-    configuracion.catalogo_path.write_bytes(b"{invalido")
-    original = archivos(configuracion.directorio_base)
-    assert entrada.main(argumentos(configuracion)) == 2
-    assert archivos(configuracion.directorio_base) == original
-    assert entrada.main([*argumentos(configuracion), "--reconstruir-catalogo"]) == 0
-    assert archivos(configuracion.directorio_base) == original
-    assert entrada.main([*argumentos(configuracion), "--reconstruir-catalogo", "--aplicar"]) == 0
-    assert AlmacenCatalogoJson(configuracion.catalogo_path).leer() is not None
+def test_cache_invalid_only_rebuilds_with_option_explicit(configuration: Config) -> None:
+    configuration.catalog_path.parent.mkdir(parents=True)
+    configuration.catalog_path.write_bytes(b"{invalido")
+    original = files(configuration.base_directory)
+    assert input.main(arguments(configuration)) == 2
+    assert files(configuration.base_directory) == original
+    assert input.main([*arguments(configuration), "--rebuild-catalog"]) == 0
+    assert files(configuration.base_directory) == original
+    assert input.main([*arguments(configuration), "--rebuild-catalog", "--apply"]) == 0
+    assert JsonCatalogStore(configuration.catalog_path).read() is not None
 
 
-def test_error_de_configuracion_no_expone_valores(
-    configuracion: Config, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_error_of_configuration_no_exposes_values(
+    configuration: Config, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("AC_LOG_LEVEL", "secreto")
-    assert entrada.main(argumentos(configuracion)) == 2
-    assert "secreto" not in capsys.readouterr().err
+    monkeypatch.setenv("CA_LOG_LEVEL", "secret")
+    assert input.main(arguments(configuration)) == 2
+    assert "secret" not in capsys.readouterr().err
 
 
-def test_cierra_lector_incluso_si_falla_contactos(
-    configuracion: Config, mocker: MockerFixture
-) -> None:
-    configuracion.contactos_path.write_bytes(b"{invalido")
-    cierre = mocker.spy(LectorClientesExcel, "cerrar")
-    assert entrada.main(argumentos(configuracion)) == 2
-    cierre.assert_called_once()
+def test_closes_reader_even_if_fails_contacts(configuration: Config, mocker: MockerFixture) -> None:
+    configuration.contacts_path.write_bytes(b"{invalido")
+    closure = mocker.spy(ExcelClientReader, "close")
+    assert input.main(arguments(configuration)) == 2
+    closure.assert_called_once()
 
 
-def test_error_de_informe_impide_escritura_excel(
-    configuracion: Config, mocker: MockerFixture
-) -> None:
-    original = configuracion.excel_path.read_bytes()
+def test_error_of_report_prevents_write_excel(configuration: Config, mocker: MockerFixture) -> None:
+    original = configuration.excel_path.read_bytes()
     mocker.patch.object(
-        AlmacenResolucionesJson, "guardar", side_effect=PersistenciaError("Fallo simulado.")
+        JsonResolutionStore, "save", side_effect=PersistenceError("Simulated failure.")
     )
-    assert entrada.main([*argumentos(configuracion), "--aplicar"]) == 4
-    assert configuracion.excel_path.read_bytes() == original
-    assert not configuracion.directorio_respaldos.exists()
+    assert input.main([*arguments(configuration), "--apply"]) == 4
+    assert configuration.excel_path.read_bytes() == original
+    assert not configuration.backup_directory.exists()
 
 
-def test_desacuerdo_entre_previsualizacion_y_resolucion_impide_marcas(
-    configuracion: Config, mocker: MockerFixture
+def test_disagreement_between_preview_and_resolution_prevents_marks(
+    configuration: Config, mocker: MockerFixture
 ) -> None:
-    original = configuracion.excel_path.read_bytes()
-    resolver = ServicioCoincidencias.ejecutar
+    original = configuration.excel_path.read_bytes()
+    resolve = MatchingService.run
 
-    def resolver_con_cambio(
-        self: ServicioCoincidencias,
+    def resolve_with_change(
+        self: MatchingService,
         *,
-        simulacion: bool = True,
-        catalogo: CatalogoClientes | None = None,
-        semana: SemanaContactos | None = None,
-    ) -> ResolucionSemanal:
-        resultado = resolver(self, simulacion=simulacion, catalogo=catalogo, semana=semana)
-        return resultado if simulacion else replace(resultado, avisos=("Cambio simulado.",))
+        dry_run: bool = True,
+        catalog: ClientCatalog | None = None,
+        week: WeeklyContacts | None = None,
+    ) -> WeeklyResolution:
+        result = resolve(self, dry_run=dry_run, catalog=catalog, week=week)
+        return result if dry_run else replace(result, warnings=("Change simulated.",))
 
-    mocker.patch.object(
-        ServicioCoincidencias, "ejecutar", autospec=True, side_effect=resolver_con_cambio
-    )
-    assert entrada.main([*argumentos(configuracion), "--aplicar"]) == 5
-    assert configuracion.excel_path.read_bytes() == original
-    assert not configuracion.directorio_respaldos.exists()
+    mocker.patch.object(MatchingService, "run", autospec=True, side_effect=resolve_with_change)
+    assert input.main([*arguments(configuration), "--apply"]) == 5
+    assert configuration.excel_path.read_bytes() == original
+    assert not configuration.backup_directory.exists()
 
 
-def test_contactos_se_leen_una_sola_vez_en_ejecucion_real(
-    configuracion: Config, mocker: MockerFixture
+def test_contacts_read_one_single_time_in_execution_real(
+    configuration: Config, mocker: MockerFixture
 ) -> None:
-    lectura = mocker.spy(LectorContactosJson, "leer")
-    assert entrada.main([*argumentos(configuracion), "--aplicar"]) == 0
-    lectura.assert_called_once()
+    read = mocker.spy(JsonContactReader, "read")
+    assert input.main([*arguments(configuration), "--apply"]) == 0
+    read.assert_called_once()
 
 
-def test_modulo_ejecutable_ofrece_ayuda_sin_leer_env_ni_crear_archivos(tmp_path: Path) -> None:
-    proceso = subprocess.run(
-        [sys.executable, "-m", "automatizacion_clientes", "--help"],
+def test_module_executable_offers_help_without_read_env_nor_create_files(tmp_path: Path) -> None:
+    process = subprocess.run(
+        [sys.executable, "-m", "client_automation", "--help"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
         check=False,
         timeout=15,
     )
-    assert proceso.returncode == 0
-    assert proceso.stdout == ""
-    assert "--aplicar" in proceso.stderr
+    assert process.returncode == 0
+    assert process.stdout == ""
+    assert "--apply" in process.stderr
     assert list(tmp_path.iterdir()) == []

@@ -4,7 +4,7 @@ repos:
   - repo: local
     hooks:
       - id: ruff-check
-        name: Revisar todo el proyecto con Ruff
+        name: Check all source and tests with Ruff
         entry: >
           poetry run ruff check src typings tests
         language: system
@@ -12,7 +12,7 @@ repos:
         always_run: true
 
       - id: ruff-format
-        name: Verificar formato de todo el proyecto
+        name: Check formatting across the project
         entry: >
           poetry run ruff format --check src typings tests
         language: system
@@ -20,7 +20,7 @@ repos:
         always_run: true
 
       - id: mypy
-        name: Verificar tipos de todo el proyecto
+        name: Check types across the project
         entry: poetry run mypy
         language: system
         pass_filenames: false

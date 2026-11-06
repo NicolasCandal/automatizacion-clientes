@@ -1,19 +1,19 @@
-"""Reconocimiento de brokers y conservación de las reglas de extracción."""
+"""Broker recognition and preservation of extraction rules."""
 
 from dataclasses import FrozenInstanceError
 from types import MappingProxyType
 
 import pytest
 
-from automatizacion_clientes.core.brokers import extraer_brokers_y_nombre
+from client_automation.core.brokers import extract_brokers_and_name
 
 
 @pytest.mark.parametrize(
-    ("alias", "hoja"),
+    ("alias", "sheet"),
     [
         ("IOL", "IOL"),
         ("invertironline", "IOL"),
-        ("IÓL", "IOL"),
+        ("I\u00d3L", "IOL"),
         ("bull", "Bull"),
         ("BM", "Bull"),
         ("BULL MARKET", "Bull"),
@@ -23,114 +23,114 @@ from automatizacion_clientes.core.brokers import extraer_brokers_y_nombre
         ("Inviu", "Inviu"),
     ],
 )
-def test_alias_identifica_una_hoja_canonica(alias: str, hoja: str) -> None:
-    resultado = extraer_brokers_y_nombre(f"Contacto de prueba ({alias})")
+def test_alias_identifies_one_sheet_canonical(alias: str, sheet: str) -> None:
+    result = extract_brokers_and_name(f"Sample contact ({alias})")
 
-    assert resultado.nombre_sin_parentesis == "Contacto de prueba"
-    assert resultado.hojas == (hoja,)
-    assert resultado.ruido == ()
+    assert result.name_without_parentheses == "Sample contact"
+    assert result.sheets == (sheet,)
+    assert result.noise == ()
 
 
 @pytest.mark.parametrize(
-    ("contenido", "hojas"),
+    ("content", "sheets"),
     [
         ("IOL/Bull", ("IOL", "Bull")),
-        ("IOL y Balanz", ("IOL", "Balanz")),
-        ("IOL Y PPI", ("IOL", "PPI")),
+        ("IOL and Balanz", ("IOL", "Balanz")),
+        ("IOL AND PPI", ("IOL", "PPI")),
         ("IOL - PPI", ("IOL", "PPI")),
         ("IOL, Inviu", ("IOL", "Inviu")),
         ("/IOL//Bull/", ("IOL", "Bull")),
-        ("Bull/IOL y PPI, Inviu - Balanz", ("Bull", "IOL", "PPI", "Inviu", "Balanz")),
+        ("Bull/IOL and PPI, Inviu - Balanz", ("Bull", "IOL", "PPI", "Inviu", "Balanz")),
     ],
 )
-def test_separadores_permiten_varias_hojas_en_orden(contenido: str, hojas: tuple[str, ...]) -> None:
-    resultado = extraer_brokers_y_nombre(f"Contacto de prueba ({contenido})")
+def test_separators_allow_multiple_sheets_in_order(content: str, sheets: tuple[str, ...]) -> None:
+    result = extract_brokers_and_name(f"Sample contact ({content})")
 
-    assert resultado.hojas == hojas
-    assert resultado.ruido == ()
+    assert result.sheets == sheets
+    assert result.noise == ()
 
 
-def test_hojas_repetidas_por_alias_o_parentesis_no_se_duplican() -> None:
-    resultado = extraer_brokers_y_nombre(
-        "Contacto de prueba (Bull/IOL) (BM/invertironline/PPI/Bull Market)"
+def test_sheets_repeated_by_alias_or_parentheses_no_duplicate() -> None:
+    result = extract_brokers_and_name(
+        "Sample contact (Bull/IOL) (BM/invertironline/PPI/Bull Market)"
     )
 
-    assert resultado.nombre_sin_parentesis == "Contacto de prueba"
-    assert resultado.hojas == ("Bull", "IOL", "PPI")
+    assert result.name_without_parentheses == "Sample contact"
+    assert result.sheets == ("Bull", "IOL", "PPI")
 
 
-def test_ruido_conserva_texto_original_y_repeticiones() -> None:
-    resultado = extraer_brokers_y_nombre("Contacto de prueba (IOL - Clíente VIP, Otro/Otro)")
+def test_noise_preserves_text_original_and_repetitions() -> None:
+    result = extract_brokers_and_name("Sample contact (IOL - Cl\u00edent VIP, Other/Other)")
 
-    assert resultado.hojas == ("IOL",)
-    assert resultado.ruido == ("Clíente VIP", "Otro", "Otro")
+    assert result.sheets == ("IOL",)
+    assert result.noise == ("Cl\u00edent VIP", "Other", "Other")
 
 
-def test_parentesco_no_se_convierte_en_broker() -> None:
-    resultado = extraer_brokers_y_nombre("Contacto de prueba (hijo de Otra Persona)")
+def test_relationship_no_converts_in_broker() -> None:
+    result = extract_brokers_and_name("Sample contact (son of Other Person)")
 
-    assert resultado.hojas == ()
-    assert resultado.ruido == ("hijo de Otra Persona",)
+    assert result.sheets == ()
+    assert result.noise == ("son of Other Person",)
 
 
 @pytest.mark.parametrize(
-    ("nombre", "esperado"),
+    ("name", "expected"),
     [
         ("", ""),
         (" \t\n ", ""),
-        ("  PRUEBA, Rádono\tMízafe  ", "PRUEBA, Rádono Mízafe"),
-        ("Contacto IOL", "Contacto IOL"),
-        ("Contacto (IOL", "Contacto (IOL"),
-        ("Contacto IOL)", "Contacto IOL)"),
-        ("Contacto ()", "Contacto"),
+        ("  SAMPLE, R\u00e1dono\tM\u00edzafe  ", "SAMPLE, R\u00e1dono M\u00edzafe"),
+        ("Contact IOL", "Contact IOL"),
+        ("Contact (IOL", "Contact (IOL"),
+        ("Contact IOL)", "Contact IOL)"),
+        ("Contact ()", "Contact"),
     ],
 )
-def test_nombre_se_conserva_sin_inferir_brokers_fuera_de_parentesis(
-    nombre: str, esperado: str
+def test_name_preserves_without_infer_brokers_outside_of_parentheses(
+    name: str, expected: str
 ) -> None:
-    resultado = extraer_brokers_y_nombre(nombre)
+    result = extract_brokers_and_name(name)
 
-    assert resultado.nombre_sin_parentesis == esperado
-    assert resultado.hojas == ()
-    assert resultado.ruido == ()
-
-
-def test_nombre_sin_texto_puede_conservar_hojas_reconocidas() -> None:
-    resultado = extraer_brokers_y_nombre("(IOL)")
-
-    assert resultado.nombre_sin_parentesis == ""
-    assert resultado.hojas == ("IOL",)
+    assert result.name_without_parentheses == expected
+    assert result.sheets == ()
+    assert result.noise == ()
 
 
-def test_tabla_personalizada_reemplaza_la_predeterminada_sin_mutarla() -> None:
-    tabla = {"especial": "OtraHoja"}
-    resultado = extraer_brokers_y_nombre("Contacto (especial/IOL)", tabla)
+def test_name_without_text_can_preserve_sheets_recognized() -> None:
+    result = extract_brokers_and_name("(IOL)")
 
-    assert resultado.hojas == ("OtraHoja",)
-    assert resultado.ruido == ("IOL",)
-    assert tabla == {"especial": "OtraHoja"}
-    assert extraer_brokers_y_nombre("Contacto (especial)").hojas == ()
+    assert result.name_without_parentheses == ""
+    assert result.sheets == ("IOL",)
 
 
-def test_tabla_vacia_desactiva_el_reconocimiento() -> None:
-    resultado = extraer_brokers_y_nombre("Contacto (IOL/Bull)", {})
+def test_table_custom_replaces_the_default_without_mutate() -> None:
+    table = {"special": "OtherSheet"}
+    result = extract_brokers_and_name("Contact (special/IOL)", table)
 
-    assert resultado.hojas == ()
-    assert resultado.ruido == ("IOL", "Bull")
-
-
-def test_tabla_solo_lectura_es_compatible_y_usa_claves_normalizadas() -> None:
-    tabla = MappingProxyType({"mi broker": "OtraHoja"})
-    resultado = extraer_brokers_y_nombre("Contacto (MÍ BROKER)", tabla)
-
-    assert resultado.hojas == ("OtraHoja",)
-    assert resultado.ruido == ()
+    assert result.sheets == ("OtherSheet",)
+    assert result.noise == ("IOL",)
+    assert table == {"special": "OtherSheet"}
+    assert extract_brokers_and_name("Contact (special)").sheets == ()
 
 
-def test_resultado_es_inmutable_y_no_expone_nombre_o_ruido() -> None:
-    resultado = extraer_brokers_y_nombre("Contacto de prueba (IOL, Nota privada)")
+def test_table_empty_disables_the_recognition() -> None:
+    result = extract_brokers_and_name("Contact (IOL/Bull)", {})
 
-    assert "Contacto de prueba" not in repr(resultado)
-    assert "Nota privada" not in repr(resultado)
+    assert result.sheets == ()
+    assert result.noise == ("IOL", "Bull")
+
+
+def test_table_only_read_is_compatible_and_uses_keys_normalized() -> None:
+    table = MappingProxyType({"my broker": "OtherSheet"})
+    result = extract_brokers_and_name("Contact (M\u00dd BROKER)", table)
+
+    assert result.sheets == ("OtherSheet",)
+    assert result.noise == ()
+
+
+def test_result_is_immutable_and_no_exposes_name_or_noise() -> None:
+    result = extract_brokers_and_name("Sample contact (IOL, Note private)")
+
+    assert "Sample contact" not in repr(result)
+    assert "Note private" not in repr(result)
     with pytest.raises(FrozenInstanceError):
-        resultado.__setattr__("hojas", ("Bull",))
+        result.__setattr__("sheets", ("Bull",))

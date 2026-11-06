@@ -3,9 +3,9 @@ requires = ["poetry-core>=2.0,<3.0"]
 build-backend = "poetry.core.masonry.api"
 
 [project]
-name = "automatizacion-clientes"
-version = "0.3.0"
-description = "Registro semanal de contactos y clientes en Excel y Google Sheets."
+name = "client-automation"
+version = "0.4.0"
+description = "Weekly WhatsApp contact analysis and client registration in Excel or Google Sheets."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
@@ -21,26 +21,27 @@ dependencies = [
 ]
 
 [project.scripts]
-automatizacion-clientes = "automatizacion_clientes.main:main"
+client-automation = "client_automation.main:main"
 
 [tool.poetry]
 exclude = [
-    "datos/**", "secretos/**", "logs/**", ".claude/**", ".cache/**",
+    "data/**", "secrets/**", "logs/**", ".claude/**", ".cache/**",
     "**/__pycache__/**", "**/*.pyc", "**/*.xlsx", "**/*.xls", "**/*.xlsm",
     "**/*.csv", "**/*.pem", "**/*.key", "**/credentials*.json", "**/token*.json",
 ]
 include = [
     { path = ".env.example", format = "sdist" },
     { path = "docs", format = "sdist" },
+    { path = "tests", format = "sdist" },
     { path = "typings", format = "sdist" },
     { path = "examples/whatsapp", format = "sdist" },
 ]
-# Los nombres anteriores contienen solo fachadas y comparten el src layout.
+# Collection-based facades share the main implementation and src layout.
 packages = [
-    { include = "automatizacion_clientes", from = "src" },
-    { include = "indice", from = "src" },
+    { include = "client_automation", from = "src" },
+    { include = "catalog_index", from = "src" },
     { include = "matching", from = "src" },
-    { include = "repositorio", from = "src" },
+    { include = "repository", from = "src" },
 ]
 
 [tool.poetry.group.dev.dependencies]
@@ -58,7 +59,7 @@ google-auth-stubs = ">=0.3,<0.4"
 target-version = "py312"
 line-length = 100
 src = ["src"]
-extend-exclude = ["datos", "secretos", "logs", ".venv"]
+extend-exclude = ["data", "secrets", "logs", ".venv"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "ANN", "D", "PTH", "T20", "LOG", "G", "RUF"]
@@ -103,7 +104,7 @@ filterwarnings = ["error"]
 
 [tool.coverage.run]
 branch = true
-source = ["automatizacion_clientes"]
+source = ["client_automation"]
 
 [tool.coverage.report]
 show_missing = true
