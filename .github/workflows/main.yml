@@ -1,0 +1,58 @@
+name: Calidad y tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calidad-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Python ${{ matrix.python }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13", "3.14"]
+    env:
+      POETRY_NO_INTERACTION: "1"
+      POETRY_VIRTUALENVS_IN_PROJECT: "true"
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Configurar Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Instalar Poetry
+        run: python -m pip install "poetry==2.3.1"
+      - name: Verificar configuración y lock
+        run: poetry check --lock
+      - name: Instalar dependencias
+        run: poetry sync --with dev
+      - name: Revisar todo el proyecto
+        run: >
+          poetry run ruff check src typings tests
+      - name: Verificar formato de todo el proyecto
+        run: >
+          poetry run ruff format --check src typings tests
+      - name: Verificar tipos de todo el proyecto
+        run: poetry run mypy
+      - name: Ejecutar tests nuevos y de regresión
+        run: >
+          poetry run pytest
+          --cov=automatizacion_clientes
+          --cov-report=term-missing
+          --cov-report=xml
+      - name: Construir distribución
+        run: poetry build

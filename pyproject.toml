@@ -1,0 +1,110 @@
+[build-system]
+requires = ["poetry-core>=2.0,<3.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "automatizacion-clientes"
+version = "0.3.0"
+description = "Registro semanal de contactos y clientes en Excel y Google Sheets."
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "pydantic>=2.12,<3.0",
+    "pydantic-settings>=2.11,<3.0",
+    "tenacity>=9.0,<10.0",
+    "requests>=2.32,<3.0",
+    "openpyxl>=3.1.5,<4.0",
+    "rapidfuzz>=3.10,<4.0",
+    "google-auth[requests]>=2.35,<3.0",
+    "google-auth-oauthlib>=1.2,<2.0",
+    "tzdata>=2025.2",
+]
+
+[project.scripts]
+automatizacion-clientes = "automatizacion_clientes.main:main"
+
+[tool.poetry]
+exclude = [
+    "datos/**", "secretos/**", "logs/**", ".claude/**", ".cache/**",
+    "**/__pycache__/**", "**/*.pyc", "**/*.xlsx", "**/*.xls", "**/*.xlsm",
+    "**/*.csv", "**/*.pem", "**/*.key", "**/credentials*.json", "**/token*.json",
+]
+include = [
+    { path = ".env.example", format = "sdist" },
+    { path = "docs", format = "sdist" },
+    { path = "typings", format = "sdist" },
+    { path = "examples/whatsapp", format = "sdist" },
+]
+# Los nombres anteriores contienen solo fachadas y comparten el src layout.
+packages = [
+    { include = "automatizacion_clientes", from = "src" },
+    { include = "indice", from = "src" },
+    { include = "matching", from = "src" },
+    { include = "repositorio", from = "src" },
+]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.3,<10.0"
+pytest-cov = ">=6.0,<8.0"
+pytest-mock = ">=3.14,<4.0"
+ruff = ">=0.14.3,<1.0"
+mypy = ">=1.19,<3.0"
+pre-commit = ">=4.0,<5.0"
+types-openpyxl = ">=3.1.5,<4.0"
+types-requests = ">=2.32,<3.0"
+google-auth-stubs = ">=0.3,<0.4"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src"]
+extend-exclude = ["datos", "secretos", "logs", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "ANN", "D", "PTH", "T20", "LOG", "G", "RUF"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true
+
+[tool.mypy]
+mypy_path = "typings"
+python_version = "3.12"
+files = [
+    "src",
+    "typings",
+    "tests",
+]
+strict = true
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+minversion = "8.3"
+testpaths = ["tests"]
+cache_dir = ".cache/pytest"
+addopts = ["--strict-config", "--strict-markers", "--import-mode=importlib", "-ra"]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["automatizacion_clientes"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

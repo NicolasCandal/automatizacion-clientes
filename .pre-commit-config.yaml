@@ -1,0 +1,27 @@
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Revisar todo el proyecto con Ruff
+        entry: >
+          poetry run ruff check src typings tests
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-format
+        name: Verificar formato de todo el proyecto
+        entry: >
+          poetry run ruff format --check src typings tests
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: mypy
+        name: Verificar tipos de todo el proyecto
+        entry: poetry run mypy
+        language: system
+        pass_filenames: false
+        always_run: true

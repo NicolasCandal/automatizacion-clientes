@@ -1,0 +1,21 @@
+{
+  "version_esquema": 1,
+  "orden_fecha": "dia_mes",
+  "siglo_anio_corto": 2000,
+  "chats": [
+    {
+      "archivo": "contacto_demo.txt",
+      "nombre_crudo": "Axa Prueba (IOL)",
+      "telefono": null,
+      "es_grupo": false,
+      "remitentes": ["Mi Nombre", "Axa Prueba"]
+    },
+    {
+      "archivo": "grupo_demo.txt",
+      "nombre_crudo": "Equipo de ejemplo",
+      "telefono": null,
+      "es_grupo": true,
+      "remitentes": ["Mi Nombre", "Otra Persona"]
+    }
+  ]
+}

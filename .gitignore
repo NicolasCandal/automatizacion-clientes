@@ -1,0 +1,62 @@
+# Secretos y credenciales — nunca versionar
+credentials.json
+token.json
+.env
+.env.*
+!.env.example
+secretos/
+
+# Datos de clientes reales — no versionar
+datos/
+catalogo.json
+.cache_catalogo.json
+resolucion.json
+aliases.json
+lista_negra.json
+logs/
+*.respaldo_*.xlsx
+
+# Entradas y respaldos: solo se admiten fixtures explícitos y sintéticos.
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+*.tsv
+*.txt
+!examples/whatsapp/contacto_demo.txt
+!examples/whatsapp/grupo_demo.txt
+*.json
+*.jsonl
+*.ndjson
+!tests/fixtures/
+!tests/fixtures/semana_ejemplo.json
+!examples/whatsapp/manifiesto.json
+*.log
+*.bak
+*.zip
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Configuraciones locales de asistentes que pueden contener rutas o comandos.
+.claude/
+.codex/
+.agents/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
